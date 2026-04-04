@@ -1,4 +1,4 @@
 streamlit
-langchain
-langchain-anthropic
 pypdf
+python-docx
+pdfminer.six
