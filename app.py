@@ -581,34 +581,29 @@ def save_txt_report(findings: list[GapFinding], output_path: str,
 # ─────────────────────────────────────────────
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="ISO/IEC 27002:2022 Access Control Gap Analysis Tool",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=textwrap.dedent("""
-        Examples:
-          python gap_analysis_tool.py --standard iso27002.pdf --policy access_policy.docx
-          python gap_analysis_tool.py --standard iso27002.pdf --policy policy.docx --output report.json
-          python gap_analysis_tool.py --standard iso27002.pdf --policy policy.docx --controls 5.15 5.16 8.2
-          python gap_analysis_tool.py --standard iso27002.pdf --policy policy.docx --output report.txt
-        """)
-    )
-    parser.add_argument(
-        "--standard", required=True,
-        help="Path to the ISO/IEC 27002:2022 standard document (.pdf, .docx, .txt)"
-    )
-    parser.add_argument(
-        "--policy", required=True,
-        help="Path to the internal policy document (.pdf, .docx, .txt)"
-    )
-    parser.add_argument(
-        "--output", default=None,
-        help="Optional output file path (.json or .txt). Defaults to console only."
-    )
-    parser.add_argument(
-        "--controls", nargs="*", default=None,
-        help="Specific control IDs to analyse, e.g. --controls 5.15 5.16 8.2 (default: all)"
-    )
-    return parser.parse_args()
+    st.title("🛡️ ISO/IEC 27002:2022 Gap Analysis Tool")
+    st.markdown("Upload your documents below to start the AI-powered audit.")
+
+    # These replace the command-line arguments with actual buttons
+    standard_file = st.file_uploader("Upload ISO/IEC 27002 Standard", type=["pdf", "docx", "txt"])
+    policy_file = st.file_uploader("Upload Internal Policy Document", type=["pdf", "docx", "txt"])
+    
+    # Optional settings
+    controls_input = st.text_input("Specific Control IDs (optional)", placeholder="e.g. 5.15 5.16 8.2")
+    
+    # Create an "args" object that your existing code can understand
+    class Args:
+        def __init__(self, standard, policy, controls):
+            self.standard = standard
+            self.policy = policy
+            self.controls = controls.split() if controls else None
+            self.output = None
+
+    if standard_file and policy_file:
+        return Args(standard_file, policy_file, controls_input)
+    else:
+        st.info("Waiting for both documents to be uploaded...")
+        st.stop()
 
 
 def main():
