@@ -1325,33 +1325,36 @@ def generate_sample(findings_df, sample_size=25):
     return sample
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  UI INTEGRATION (Add this inside your 'if hr_file and sys_file:' block)
+#  UI INTEGRATION (Corrected Variable Names)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# (Find the bottom of your app where you display the findings and add this:)
+# 'df' is the name of the findings dataframe created by run_audit() in your v5
+if not df.empty:
+    st.divider()
+    st.header("🏁 Final Audit Report")
 
-st.divider()
-st.header("🏁 Final Audit Report")
+    # 1. Generate the Opinion (Pass 'df' as the first argument)
+    opinion_text = generate_opinion(df, len(sys_df), scope_start, scope_end)
+    st.markdown(opinion_text)
 
-# Generate the Opinion
-opinion_text = generate_opinion(final_report, len(sys_df), scope_start, scope_end)
-st.markdown(opinion_text)
+    # 2. Generate the Sample for External Auditors
+    st.subheader("📦 External Audit Evidence Pack")
+    st.info("The following 25 items have been selected as a 'Risk-Based Sample' for manual evidence collection.")
+    sample_df = generate_sample(df)
+    st.dataframe(sample_df, use_container_width=True)
 
-# Generate the Sample for External Auditors
-st.subheader("📦 External Audit Evidence Pack")
-st.info("The following 25 items have been selected as a 'Risk-Based Sample' for manual evidence collection.")
-sample_df = generate_sample(final_report)
-st.dataframe(sample_df)
-
-# Update the Download Button to include the Sample
-output = io.BytesIO()
-with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-    final_report.to_excel(writer, index=False, sheet_name='Full_Findings')
-    sample_df.to_excel(writer, index=False, sheet_name='Manual_Sample_Request')
-
-st.download_button(
-    label="📥 Download ALL-IN-ONE Audit Pack (Findings + Samples)",
-    data=output.getvalue(),
-    file_name=f"Audit_Pack_Nairs_{datetime.now().strftime('%Y%m%d')}.xlsx",
-    mime="application/vnd.ms-excel"
-)
+    # 3. Create the Combined Download Pack
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Full_Findings')
+        sample_df.to_excel(writer, index=False, sheet_name='Manual_Sample_Request')
+    
+    st.download_button(
+        label="📥 Download ALL-IN-ONE Audit Pack (Findings + Samples)",
+        data=output.getvalue(),
+        file_name=f"Audit_Pack_Nairs_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.ms-excel"
+    )
+else:
+    st.balloons()
+    st.success("Audit Clean! 100% of accounts mapped to active employees.")
