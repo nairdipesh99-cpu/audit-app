@@ -423,7 +423,11 @@ def run_audit(
                 days_inactive,
             ))
 
-    return (pd.DataFrame(findings) if findings else pd.DataFrame()), excluded_count
+    findings_df = pd.DataFrame(findings) if findings else pd.DataFrame()
+    if not findings_df.empty:
+        findings_df.insert(0, "ScopeTo",   str(scope_end))
+        findings_df.insert(0, "ScopeFrom", str(scope_start))
+    return findings_df, excluded_count
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -583,32 +587,94 @@ with st.sidebar:
     # ── AUDIT SCOPE ───────────────────────────────────────────────────────────
     st.subheader("📅 Audit Scope Period")
     st.caption(
+        "Set your From / To dates, then click **GO** to lock the scope. "
         "Only accounts whose creation date, last login, or password-set date "
-        "falls within this window will be examined. Accounts with no date at all "
-        "are always included (they could be ghost accounts)."
+        "falls within this window will be scanned. Accounts with no date are always included."
     )
+
+    # Quick preset buttons
+    today = date.today()
+    preset_cols = st.columns(2)
+    with preset_cols[0]:
+        if st.button("This Month",    use_container_width=True):
+            st.session_state["scope_start"] = today.replace(day=1)
+            st.session_state["scope_end"]   = today
+        if st.button("Last Quarter",  use_container_width=True):
+            q = (today.month - 1) // 3
+            if q == 0:
+                qs = date(today.year - 1, 10, 1); qe = date(today.year - 1, 12, 31)
+            else:
+                qs = date(today.year, (q - 1) * 3 + 1, 1)
+                qe = date(today.year, q * 3, [31,28,31,30,31,30,31,31,30,31,30,31][q*3-1])
+            st.session_state["scope_start"] = qs
+            st.session_state["scope_end"]   = qe
+    with preset_cols[1]:
+        if st.button("Last 6 Months", use_container_width=True):
+            st.session_state["scope_start"] = today - timedelta(days=182)
+            st.session_state["scope_end"]   = today
+        if st.button("Full Year",     use_container_width=True):
+            st.session_state["scope_start"] = date(today.year, 1, 1)
+            st.session_state["scope_end"]   = date(today.year, 12, 31)
+
+    # Date inputs — read from session state if preset was clicked
+    default_start = st.session_state.get("scope_start", date(today.year, 1, 1))
+    default_end   = st.session_state.get("scope_end",   today)
+
     scope_col1, scope_col2 = st.columns(2)
     with scope_col1:
-        SCOPE_START = st.date_input(
+        picked_start = st.date_input(
             "From",
-            value=date.today() - timedelta(days=365),
-            max_value=date.today(),
-            help="Start of audit scope — no findings will be raised for activity before this date",
+            value=default_start,
+            max_value=today,
+            help="Start of audit scope",
+            key="date_from",
         )
     with scope_col2:
-        SCOPE_END = st.date_input(
+        picked_end = st.date_input(
             "To",
-            value=date.today(),
-            min_value=SCOPE_START,
-            max_value=date.today(),
-            help="End of audit scope — typically today or the last day of the review period",
+            value=default_end,
+            min_value=picked_start,
+            max_value=today,
+            help="End of audit scope — typically last day of review period",
+            key="date_to",
         )
 
-    if SCOPE_START >= SCOPE_END:
+    # Validation
+    date_error = picked_start >= picked_end
+    if date_error:
         st.error("⚠️ 'From' date must be before 'To' date.")
 
-    scope_days = (SCOPE_END - SCOPE_START).days
-    st.info(f"🗓️ Scope window: **{scope_days} days**  ({SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')})")
+    # ── GO BUTTON ─────────────────────────────────────────────────────────────
+    go_clicked = st.button(
+        "▶  GO — Lock Scope & Run Audit",
+        use_container_width=True,
+        type="primary",
+        disabled=date_error,
+    )
+
+    if go_clicked:
+        st.session_state["locked_start"] = picked_start
+        st.session_state["locked_end"]   = picked_end
+        st.session_state["scope_start"]  = picked_start
+        st.session_state["scope_end"]    = picked_end
+
+    # Use locked scope if set, otherwise use picked dates
+    SCOPE_START = st.session_state.get("locked_start", picked_start)
+    SCOPE_END   = st.session_state.get("locked_end",   picked_end)
+
+    # Lock status indicator
+    if "locked_start" in st.session_state:
+        scope_days = (SCOPE_END - SCOPE_START).days
+        st.success(
+            f"🔒 Scope locked: **{SCOPE_START.strftime('%d %b %Y')}** → "
+            f"**{SCOPE_END.strftime('%d %b %Y')}** ({scope_days} days)"
+        )
+    else:
+        scope_days = (picked_end - picked_start).days
+        st.info(
+            f"🗓️ {scope_days} days selected — click **GO** to lock and run"
+        )
+
     st.divider()
 
     # ── THRESHOLDS ────────────────────────────────────────────────────────────
@@ -664,14 +730,22 @@ if hr_file and sys_file:
             st.error(f"❌ System Access file is missing required columns: **{sys_missing}**")
         st.stop()
 
+    # ── Only run audit when scope is locked via GO ───────────────────────────
+    if "locked_start" not in st.session_state and not go_clicked:
+        st.info(
+            "📅 Files uploaded! Now set your **audit scope dates** in the sidebar "
+            "and click **▶ GO** to run the scan."
+        )
+        st.stop()
+
     with st.spinner("🔍 Running all 9 audit checks..."):
         findings_df, excluded_count = run_audit(hr_df, sys_df, SCOPE_START, SCOPE_END)
 
     # ── SCOPE BANNER ─────────────────────────────────────────────────────────
     in_scope_count = len(sys_df) - excluded_count
-    st.info(
-        f"📅 **Audit scope:** {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}  "
-        f"| **{in_scope_count}** of {len(sys_df)} accounts examined  "
+    st.success(
+        f"🔒 **Locked scope:** {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}  "
+        f"| **{in_scope_count}** of {len(sys_df)} accounts scanned  "
         f"| **{excluded_count}** excluded as out-of-scope"
     )
 
