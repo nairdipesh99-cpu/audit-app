@@ -1,4 +1,5 @@
 streamlit
-anthropic
-pypdf
-python-docx
+pandas
+thefuzz
+xlsxwriter
+openpyxl
