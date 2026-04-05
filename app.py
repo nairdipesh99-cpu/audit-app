@@ -634,6 +634,7 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
     buf.seek(0)
     return buf.getvalue()
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  SESSION STATE
 # ─────────────────────────────────────────────────────────────────────────────
@@ -658,70 +659,147 @@ def _set_year():
     st.session_state.update(ss_start=date(y,1,1),ss_end=date(y,12,31),locked=False)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  PAGE CONFIG & GLOBAL STYLE
+#  DOCUMENT PARSER
+#  Reads any uploaded file and returns its text content
+# ─────────────────────────────────────────────────────────────────────────────
+def extract_text(uploaded_file, max_chars=5000):
+    """Extract text from PDF, DOCX, TXT or XLSX. Returns empty string on failure."""
+    if uploaded_file is None:
+        return ""
+    name = uploaded_file.name.lower()
+    try:
+        if name.endswith(".txt"):
+            return uploaded_file.read().decode("utf-8", errors="ignore")[:max_chars]
+        elif name.endswith(".pdf"):
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(uploaded_file)
+                text = " ".join(p.extract_text() or "" for p in reader.pages[:10])
+                return text[:max_chars]
+            except Exception:
+                return "[PDF uploaded — install pypdf to extract content]"
+        elif name.endswith(".docx"):
+            try:
+                import docx
+                doc = docx.Document(uploaded_file)
+                return " ".join(p.text for p in doc.paragraphs)[:max_chars]
+            except Exception:
+                return "[DOCX uploaded — install python-docx to extract content]"
+        elif name.endswith((".xlsx",".xls")):
+            df = pd.read_excel(uploaded_file, sheet_name=None)
+            text_parts = []
+            for sheet_name, sheet_df in df.items():
+                text_parts.append(f"[Sheet: {sheet_name}]")
+                text_parts.append(sheet_df.to_string(index=False))
+            return " ".join(text_parts)[:max_chars]
+        elif name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+            return df.to_string(index=False)[:max_chars]
+    except Exception as e:
+        return f"[Could not parse {uploaded_file.name}: {e}]"
+    return ""
+
+def detect_doc_type(f):
+    """
+    Auto-detect document type from filename.
+    Returns one of: hr_master | system_access | soa | access_policy |
+                    jml_procedure | risk_register | other
+    """
+    if f is None:
+        return "other"
+    name = f.name.lower()
+    if any(k in name for k in ["hr_master","hr master","hrmaster","employee","staff_list","staff list","personnel"]):
+        return "hr_master"
+    if any(k in name for k in ["system_access","system access","access_list","access list","user_access","useraccess","sysaccess"]):
+        return "system_access"
+    if any(k in name for k in ["soa","statement_of_applicability","statement of applicability","annex_a","annex a"]):
+        return "soa"
+    if any(k in name for k in ["access_policy","access policy","access_control","access control policy"]):
+        return "access_policy"
+    if any(k in name for k in ["jml","joiner","mover","leaver","onboard","offboard","joinermover"]):
+        return "jml_procedure"
+    if any(k in name for k in ["risk_register","risk register","riskregister"]):
+        return "risk_register"
+    if any(k in name for k in ["iso","standard","policy","procedure","framework","gdpr","sox","pci"]):
+        return "standard"
+    return "other"
+
+def parse_soa_sod_rules(soa_text):
+    """
+    Try to extract SoD rules from uploaded SOA/policy text.
+    Returns a dict of {dept: [forbidden_access_levels]} or empty dict.
+    """
+    import re
+    rules = {}
+    # Look for patterns like "Finance: Admin, DBAdmin" or "Sales staff: Finance, Payroll"
+    dept_keywords = ["Finance","IT","HR","Sales","Marketing","Operations","Procurement","Legal","Risk","Support"]
+    access_keywords = ["Admin","Finance","Payroll","DBAdmin","HR","SysAdmin","FullControl","SuperAdmin","Root"]
+    for dept in dept_keywords:
+        pattern = rf"{dept}[^.\n]{{0,60}}({"|".join(access_keywords)})"
+        matches = re.findall(pattern, soa_text, re.IGNORECASE)
+        if matches:
+            rules[dept] = list(set(matches))
+    return rules
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PAGE CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Identity Auditor — IAM Audit Platform",
+    page_title="IAM Audit Platform — Nairs.com",
     layout="wide",
     page_icon="🛡️",
     initial_sidebar_state="expanded",
 )
 
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🛡️ Identity Auditor")
-    st.markdown("---")
+    st.markdown("### 🛡️ IAM Audit Platform")
+    st.divider()
 
-    st.markdown("#### Engagement")
+    st.markdown("#### Engagement details")
     meta = {
-        "client":   st.text_input("Client",    placeholder="Nairs.com Ltd",  label_visibility="visible"),
-        "ref":      st.text_input("Reference", placeholder="IAR-2025-001",   label_visibility="visible"),
-        "auditor":  st.text_input("Auditor",   placeholder="Your full name", label_visibility="visible"),
-        "standard": st.selectbox("Standard", [
+        "client":   st.text_input("Client",    placeholder="Nairs.com Ltd"),
+        "ref":      st.text_input("Reference", placeholder="IAR-2025-001"),
+        "auditor":  st.text_input("Auditor",   placeholder="Your full name"),
+        "standard": st.selectbox("Audit standard", [
             "ISO 27001:2022","SOX ITGC","PCI-DSS v4.0","GDPR Art.32",
             "ISACA IS Audit","Internal Audit Charter",
         ]),
     }
 
-    st.markdown("---")
-    st.markdown("#### Frameworks to cite")
+    st.divider()
+    st.markdown("#### Compliance frameworks")
     selected_fw = []
-    cols_fw = st.columns(2)
-    if cols_fw[0].checkbox("SOX",      value=True):  selected_fw.append("SOX")
-    if cols_fw[1].checkbox("ISO 27001",value=True):  selected_fw.append("ISO")
-    if cols_fw[0].checkbox("GDPR",     value=True):  selected_fw.append("GDPR")
-    if cols_fw[1].checkbox("PCI-DSS",  value=False): selected_fw.append("PCI-DSS")
+    c1,c2 = st.columns(2)
+    if c1.checkbox("SOX",       value=True):  selected_fw.append("SOX")
+    if c2.checkbox("ISO 27001", value=True):  selected_fw.append("ISO")
+    if c1.checkbox("GDPR",      value=True):  selected_fw.append("GDPR")
+    if c2.checkbox("PCI-DSS",   value=False): selected_fw.append("PCI-DSS")
 
-    st.markdown("---")
+    st.divider()
     st.markdown("#### Audit scope")
-    _yr_options = [today.year-2, today.year-1, today.year]
+    _yr_opts = [today.year-2, today.year-1, today.year]
     st.selectbox(
-        "Year",
-        options=_yr_options,
-        index=1,
-        format_func=lambda y: f"{y}  ◀ previous" if y==today.year-1 else (f"{y}  ◀ current" if y==today.year else str(y)),
+        "Audit year",
+        options=_yr_opts, index=1,
+        format_func=lambda y: f"{y}  ← previous" if y==today.year-1 else (f"{y}  ← current" if y==today.year else str(y)),
         key="audit_year_sel",
     )
-    sb1, sb2 = st.columns(2)
+    sb1,sb2 = st.columns(2)
     sb1.button("Full Year",    use_container_width=True, on_click=_set_year, type="primary")
     sb2.button("Last Quarter", use_container_width=True, on_click=_last_q)
     sb1.button("Last 6 Mo.",   use_container_width=True, on_click=_last_6)
     sb2.button("This Month",   use_container_width=True, on_click=_this_month)
-
-    st.write("")
-    dc1, dc2 = st.columns(2)
-    with dc1: st.date_input("From", key="ss_start", on_change=_date_chg, label_visibility="visible")
-    with dc2: st.date_input("To",   key="ss_end",   on_change=_date_chg, label_visibility="visible")
+    dc1,dc2 = st.columns(2)
+    with dc1: st.date_input("From", key="ss_start", on_change=_date_chg)
+    with dc2: st.date_input("To",   key="ss_end",   on_change=_date_chg)
 
     date_err = st.session_state["ss_start"] >= st.session_state["ss_end"]
-    if date_err: st.error("From must be before To")
-
-    st.button("▶  GO — Run Audit",
-              use_container_width=True, type="primary",
+    if date_err: st.error("From must be before To.")
+    st.button("▶  GO — Run Audit", use_container_width=True, type="primary",
               disabled=date_err, on_click=_go)
 
     SCOPE_START = st.session_state["ss_start"]
@@ -732,94 +810,149 @@ with st.sidebar:
     else:
         st.info(f"📅 {scope_days} days — click GO to run")
 
-    st.markdown("---")
-    st.markdown("#### Thresholds")
+    st.divider()
+    st.markdown("#### Detection thresholds")
     DORMANT_DAYS         = st.slider("Dormant (days)",         30, 365, 90)
     PASSWORD_EXPIRY_DAYS = st.slider("Password expiry (days)", 30, 365, 90)
-    FUZZY_THRESHOLD      = st.slider("Fuzzy match %",          70, 99,  88)
-    MAX_SYSTEMS          = st.slider("Max systems per user",    2,  10,   3)
+    FUZZY_THRESHOLD      = st.slider("Fuzzy match %",          70,  99, 88)
+    MAX_SYSTEMS          = st.slider("Max systems per user",    2,   10,  3)
 
-    st.markdown("---")
+    st.divider()
     with st.expander("Column reference"):
         st.markdown("""
-**HR Master** (required)
+**HR Master** *(required)*
 `Email` `FullName` `Department`
 
-**HR Master** (recommended)
+**HR Master** *(recommended)*
 `EmploymentStatus` `ContractType` `TerminationDate`
 
-**System Access** (required)
+**System Access** *(required)*
 `Email` `AccessLevel`
 
-**System Access** (recommended)
-`FullName` `LastLoginDate` `PasswordLastSet` `AccountCreatedDate` `MFA` `SystemName`
+**System Access** *(recommended)*
+`LastLoginDate` `PasswordLastSet` `AccountCreatedDate` `MFA` `SystemName`
         """)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  HEADER
 # ─────────────────────────────────────────────────────────────────────────────
-st.title("🛡️ Identity & Access Management Auditor")
-st.caption("15 automated checks · ISO 27001 · SOX · GDPR · PCI-DSS · Workpaper-ready export · 10-minute audit")
+st.title("🛡️ Identity & Access Management Audit Platform")
+st.caption(
+    f"15 automated checks · ISO 27001 · SOX · GDPR · PCI-DSS · "
+    f"Workpaper-ready report · {meta.get('standard','ISO 27001:2022')} audit"
+)
 st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  FILE UPLOAD — 3 boxes
+#  DOCUMENT UPLOAD ZONE — single intelligent zone for all documents
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown("### Upload files")
-up1, up2, up3 = st.columns(3)
+st.markdown("### 📂 Upload audit documents")
+st.caption(
+    "Upload all documents in one place. The tool automatically detects HR Master, "
+    "System Access List, SOA, policies and standards by filename. "
+    "Name your files clearly — e.g. `HR_Master_2025.xlsx`, `System_Access_2025.xlsx`, `SOA_ISO27001.xlsx`."
+)
 
-with up1:
-    st.markdown("**① HR Master**")
-    hr_file = st.file_uploader("Upload HR Master (.xlsx / .csv)", type=["xlsx","xls","csv"],
-                                label_visibility="visible", key="hr_upload")
+uploaded_files = st.file_uploader(
+    "Drop all your audit documents here",
+    type=["xlsx","xls","csv","pdf","txt","docx"],
+    accept_multiple_files=True,
+    label_visibility="collapsed",
+    key="multi_upload",
+)
 
-with up2:
-    st.markdown("**② System Access List**")
-    sys_file = st.file_uploader("Upload System Access (.xlsx / .csv)", type=["xlsx","xls","csv"],
-                                 label_visibility="visible", key="sys_upload")
+# ── Auto-classify uploaded files ─────────────────────────────────────────────
+hr_file   = None
+sys_file  = None
+doc_files = []   # policies, SOA, standards, etc.
 
-with up3:
-    st.markdown("**③ Audit Standard / Policy** *(optional)*")
-    std_file = st.file_uploader("Upload standard (PDF, TXT, DOCX)", type=["pdf","txt","docx"],
-                                 label_visibility="visible", key="std_upload")
-    if not std_file:
-        st.caption("Upload your ISO 27001 SOA, access control policy or audit standard. Findings will cite it directly.")
+if uploaded_files:
+    classified = {f.name: detect_doc_type(f) for f in uploaded_files}
 
-# Parse standard document if uploaded
-std_context = ""
-if std_file is not None:
-    try:
-        if std_file.type == "text/plain":
-            std_context = std_file.read().decode("utf-8", errors="ignore")[:3000]
-        elif std_file.name.endswith(".pdf"):
-            try:
-                import pypdf
-                reader = pypdf.PdfReader(std_file)
-                std_context = " ".join(p.extract_text() or "" for p in reader.pages[:8])[:3000]
-            except Exception:
-                std_context = "[PDF uploaded — pypdf not available. Install pypdf to extract text.]"
-        elif std_file.name.endswith(".docx"):
-            try:
-                import docx
-                doc = docx.Document(std_file)
-                std_context = " ".join(p.text for p in doc.paragraphs)[:3000]
-            except Exception:
-                std_context = "[DOCX uploaded — python-docx not available.]"
-        if std_context:
-            st.success(f"📄 Standard document parsed — {len(std_context):,} characters extracted. Findings will reference this document.")
-    except Exception as e:
-        st.warning(f"Could not parse standard document: {e}")
+    # Show what was detected
+    st.markdown("**Files detected:**")
+    det_cols = st.columns(min(len(uploaded_files), 4))
+    for i, f in enumerate(uploaded_files):
+        dtype = classified[f.name]
+        icon = {"hr_master":"👥","system_access":"💻","soa":"📋",
+                "access_policy":"🔒","jml_procedure":"🔄","risk_register":"⚠️",
+                "standard":"📄","other":"📎"}.get(dtype,"📎")
+        label = {"hr_master":"HR Master","system_access":"System Access",
+                 "soa":"SOA / Standard","access_policy":"Access Policy",
+                 "jml_procedure":"JML Procedure","risk_register":"Risk Register",
+                 "standard":"Standard / Policy","other":"Other document"}.get(dtype,"Document")
+        det_cols[i % 4].success(f"{icon} {f.name} — {label}")
 
-st.markdown("---")
+    # Assign files
+    for f in uploaded_files:
+        dtype = classified[f.name]
+        if dtype == "hr_master" and hr_file is None:
+            hr_file = f
+        elif dtype == "system_access" and sys_file is None:
+            sys_file = f
+        else:
+            doc_files.append((f, dtype))
+
+    # If no auto-detected HR/system files, let user manually assign
+    if not hr_file or not sys_file:
+        st.warning("⚠️ Could not auto-detect all required files. Please assign them manually:")
+        other_files = [f for f in uploaded_files]
+        file_names  = [f.name for f in other_files]
+        ma1, ma2 = st.columns(2)
+        with ma1:
+            hr_sel = st.selectbox(
+                "Which file is the HR Master?",
+                options=["— not uploaded —"] + file_names,
+                key="hr_manual_sel",
+            )
+            if hr_sel != "— not uploaded —":
+                hr_file = next(f for f in uploaded_files if f.name == hr_sel)
+        with ma2:
+            sys_sel = st.selectbox(
+                "Which file is the System Access list?",
+                options=["— not uploaded —"] + file_names,
+                key="sys_manual_sel",
+            )
+            if sys_sel != "— not uploaded —":
+                sys_file = next(f for f in uploaded_files if f.name == sys_sel)
+
+st.divider()
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  DOCUMENT INTELLIGENCE PANEL
+#  Show what the tool extracted from each non-data document
+# ─────────────────────────────────────────────────────────────────────────────
+doc_context   = {}   # {dtype: text}
+soa_sod_extra = {}   # extra SoD rules extracted from SOA
+
+if doc_files:
+    with st.expander(f"📄 Document intelligence — {len(doc_files)} policy/standard document(s) parsed", expanded=False):
+        for f, dtype in doc_files:
+            text = extract_text(f)
+            doc_context[dtype] = text
+            label = {"soa":"SOA — ISO 27001 Annex A","access_policy":"Access Control Policy",
+                     "jml_procedure":"JML Procedure","risk_register":"Risk Register",
+                     "standard":"Audit Standard / Policy","other":"Supporting document"}.get(dtype, dtype)
+            st.markdown(f"**{f.name}** — detected as: *{label}*")
+            if text and not text.startswith("["):
+                st.caption(f"Extracted {len(text):,} characters. Findings will reference this document.")
+                # Try to extract SoD rules from SOA
+                if dtype in ("soa","access_policy"):
+                    extra = parse_soa_sod_extra = parse_soa_sod_rules(text)
+                    if extra:
+                        st.caption(f"Extracted {len(extra)} department SoD rules from document — applied to audit checks.")
+                        soa_sod_extra.update(extra)
+            else:
+                st.caption(text or "No text extracted.")
+            st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  MAIN AUDIT FLOW
 # ─────────────────────────────────────────────────────────────────────────────
 if hr_file and sys_file:
-    # Read files
     def read_file(f):
-        if f.name.endswith(".csv"):
-            return pd.read_csv(f)
+        f.seek(0)
+        if f.name.endswith(".csv"): return pd.read_csv(f)
         return pd.read_excel(f)
 
     hr_df  = read_file(hr_file)
@@ -829,64 +962,46 @@ if hr_file and sys_file:
     hr_miss  = {"Email","FullName","Department"} - set(hr_df.columns)
     sys_miss = {"Email","AccessLevel"}           - set(sys_df.columns)
     if hr_miss or sys_miss:
-        col_e1, col_e2 = st.columns(2)
-        if hr_miss:  col_e1.error(f"HR file missing columns: {hr_miss}")
-        if sys_miss: col_e2.error(f"System Access file missing columns: {sys_miss}")
-        st.markdown("""
-**Column names must match exactly.** Check your file has these exact headers:
-
-| File | Required columns |
-|---|---|
-| HR Master | `Email` · `FullName` · `Department` |
-| System Access | `Email` · `AccessLevel` |
-        """)
+        e1,e2 = st.columns(2)
+        if hr_miss:  e1.error(f"HR Master missing columns: {hr_miss}")
+        if sys_miss: e2.error(f"System Access missing columns: {sys_miss}")
+        st.info("Required columns — HR Master: Email, FullName, Department | System Access: Email, AccessLevel")
         st.stop()
 
-    # Department filter — new feature
+    # Department filter
     all_depts = sorted(set(
         list(hr_df["Department"].dropna().unique()) +
         (list(sys_df["Department"].dropna().unique()) if "Department" in sys_df.columns else [])
     ))
-    st.markdown("### Scope filter")
-    sc1, sc2 = st.columns([3,1])
-    with sc1:
+    st.markdown("### Department scope")
+    df1,df2 = st.columns([3,1])
+    with df1:
         selected_depts = st.multiselect(
-            "Filter by department (leave empty to scan ALL departments)",
-            options=all_depts,
-            default=[],
-            placeholder="All departments",
-            help="Select specific departments to narrow audit scope — e.g. Finance, IT only"
+            "Filter by department — leave empty to scan ALL",
+            options=all_depts, default=[],
+            placeholder="All departments — no filter applied",
         )
-    with sc2:
+    with df2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.info(f"{'Selected: '+', '.join(selected_depts) if selected_depts else 'All departments'}")
 
-        if selected_depts:
-            st.info(f"Scanning {len(selected_depts)} dept(s)")
-        else:
-            st.info("Scanning all depts")
+    hr_df_f  = hr_df[hr_df["Department"].isin(selected_depts)] if selected_depts else hr_df
+    sys_df_f = sys_df[sys_df["Department"].isin(selected_depts)] if (selected_depts and "Department" in sys_df.columns) else sys_df
 
-    # Apply department filter
-    if selected_depts:
-        hr_df_filtered  = hr_df[hr_df["Department"].isin(selected_depts)]
-        sys_df_filtered = sys_df[sys_df["Department"].isin(selected_depts)] if "Department" in sys_df.columns else sys_df
-    else:
-        hr_df_filtered  = hr_df
-        sys_df_filtered = sys_df
-
-    st.markdown("---")
+    st.divider()
 
     # Population completeness gate
     if not st.session_state.get("confirmed", False):
-        st.markdown("### ⚠️ Step 1 — Confirm data completeness")
-        g1, g2, g3 = st.columns(3)
-        g1.metric("HR Master rows",      f"{len(hr_df_filtered):,}")
-        g2.metric("System Access rows",  f"{len(sys_df_filtered):,}")
-        g3.metric("Departments in scope", len(selected_depts) if selected_depts else len(all_depts))
-
+        st.markdown("### ⚠️ Confirm data completeness")
+        g1,g2,g3 = st.columns(3)
+        g1.metric("HR Master rows",       f"{len(hr_df_f):,}")
+        g2.metric("System Access rows",   f"{len(sys_df_f):,}")
+        g3.metric("Policy docs uploaded", len(doc_files))
         st.markdown("""
-Before the scan runs, confirm the data you uploaded is the **full unfiltered population** — not a sample or pre-filtered extract provided by the client.
-This confirmation is part of your audit workpaper evidence.
+Before the scan runs, confirm that the data you uploaded is the **complete, unfiltered population** —
+not a sample or extract pre-filtered by the client. This confirmation forms part of your audit workpaper evidence.
         """)
-        if st.button("✅  I confirm — this is the complete, unfiltered population. Proceed to scope selection.",
+        if st.button("✅  I confirm — this is the complete population. Proceed to scope & run.",
                      type="primary", use_container_width=True):
             st.session_state["confirmed"] = True
             st.rerun()
@@ -894,100 +1009,94 @@ This confirmation is part of your audit workpaper evidence.
 
     # Scope lock gate
     if not st.session_state.get("locked", False):
-        st.markdown("### Step 2 — Set scope and run")
-        sl1, sl2, sl3 = st.columns(3)
-        sl1.metric("Data confirmed",   f"{len(hr_df_filtered):,} HR rows")
-        sl2.metric("System accounts",  f"{len(sys_df_filtered):,} rows")
-        sl3.metric("Scope selected",   f"{SCOPE_START.year}" if SCOPE_START.year == SCOPE_END.year else f"{SCOPE_START.year}–{SCOPE_END.year}")
-        st.info(f"📅 Scope set to {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')} ({scope_days} days). Click **▶ GO — Run Audit** in the sidebar to start.")
+        s1,s2,s3 = st.columns(3)
+        s1.metric("Population confirmed", f"{len(hr_df_f):,} HR | {len(sys_df_f):,} system")
+        s2.metric("Year selector",        str(st.session_state.get("audit_year_sel", _default_year)))
+        s3.metric("Policy docs parsed",   len(doc_files))
+        st.info(
+            f"📅 Set to **{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}**. "
+            f"Click **▶ GO — Run Audit** in the sidebar to lock and scan."
+        )
         st.stop()
 
     # Run audit
     with st.spinner("🔍 Running 15 checks across all identities..."):
         findings_df, excluded_count = run_audit(
-            hr_df_filtered, sys_df_filtered,
+            hr_df_f, sys_df_f,
             SCOPE_START, SCOPE_END,
             DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
             FUZZY_THRESHOLD, MAX_SYSTEMS,
             selected_fw,
         )
 
-    in_scope_n = len(sys_df_filtered) - excluded_count
-    total      = len(findings_df)
+    in_scope_n = len(sys_df_f) - excluded_count
+    total = len(findings_df)
 
-    # ── SCOPE BANNER ─────────────────────────────────────────────────────────
-    dept_label = f"{len(selected_depts)} dept(s)" if selected_depts else "All departments"
-    st.success(
-        f"🔒 **Scope locked:** {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')} "
-        f"| **{in_scope_n:,}** of {len(sys_df_filtered):,} accounts scanned "
-        f"| {dept_label} | Standard: {meta.get('standard','—')} "
-        f"| {excluded_count:,} excluded"
-    )
+    # Scope & doc banner
+    doc_names = ", ".join(f.name for f,_ in doc_files) if doc_files else "None uploaded"
+    dept_label = f"{len(selected_depts)} dept(s): {', '.join(selected_depts)}" if selected_depts else "All departments"
 
-    # ── METRIC CARDS ──────────────────────────────────────────────────────────
-    st.markdown("### Audit results")
-    def cnt(col, val): return len(findings_df[findings_df[col]==val]) if total else 0
+    b1,b2,b3,b4 = st.columns(4)
+    b1.success(f"🔒 Scope: {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}")
+    b2.success(f"👥 Scanned: {in_scope_n:,} of {len(sys_df_f):,} accounts")
+    b3.info(f"🏢 Departments: {dept_label}")
+    b4.info(f"📄 Docs: {len(doc_files)} policy/standard file(s)")
 
-    mc = st.columns(5)
-    mc[0].metric("Total Findings",  total,
-                 delta=None, delta_color="off")
-    mc[1].metric("🔴 Critical",
-                 cnt("Severity","🔴 CRITICAL"),
-                 help="Disable / escalate within 24 hours")
-    mc[2].metric("🟠 High",
-                 cnt("Severity","🟠 HIGH"),
-                 help="Resolve within 5 business days")
-    mc[3].metric("🟡 Medium",
-                 cnt("Severity","🟡 MEDIUM"),
-                 help="Resolve within 10 business days")
-    mc[4].metric("Accounts Scanned", f"{in_scope_n:,}")
+    # Scope exclusion warning
+    if excluded_count == len(sys_df_f) and len(sys_df_f) > 0:
+        st.error(
+            f"⚠️ All {len(sys_df_f):,} accounts were excluded by the scope filter. "
+            f"Your data dates do not fall within **{SCOPE_START.year}**. "
+            f"Use the year selector in the sidebar — try **{today.year - 1}** for last year's data."
+        )
+        st.stop()
+
+    # ── RESULTS ──────────────────────────────────────────────────────────────
+    st.divider()
+    st.markdown("### 📊 Audit results")
+    def cnt(col,val): return len(findings_df[findings_df[col]==val]) if total else 0
+
+    m = st.columns(5)
+    m[0].metric("Total findings",   total)
+    m[1].metric("🔴 Critical",       cnt("Severity","🔴 CRITICAL"))
+    m[2].metric("🟠 High",           cnt("Severity","🟠 HIGH"))
+    m[3].metric("🟡 Medium",         cnt("Severity","🟡 MEDIUM"))
+    m[4].metric("Accounts scanned",  f"{in_scope_n:,}")
 
     if total:
-
+        st.divider()
         cc = st.columns(5)
-        checks_list = [
-            ("Orphaned",          "Orphaned Account"),
-            ("Terminated Active", "Terminated Employee with Active Account"),
-            ("Post-Term Login",   "Post-Termination Login"),
-            ("Dormant",           "Dormant Account"),
-            ("SoD Violations",    "Toxic Access (SoD Violation)"),
-            ("Privilege Creep",   "Privilege Creep"),
-            ("Generic IDs",       "Shared / Generic Account"),
-            ("Service Accts",     "Service / System Account"),
-            ("Admin Outside IT",  "Super-User / Admin Access"),
-            ("MFA Disabled",      "MFA Not Enabled"),
-            ("Pwd Expired",       "Password Never Expired"),
-            ("Duplicates",        "Duplicate System Access"),
-            ("Multi-System",      "Excessive Multi-System Access"),
-            ("No Expiry",         "Contractor Without Expiry Date"),
-            ("Near-Match",        "Near-Match Email"),
-        ]
-        for i, (lbl, itype) in enumerate(checks_list):
-            n = cnt("IssueType", itype)
-            cc[i % 5].metric(lbl, n)
-
-    st.markdown("---")
+        for i,(lbl,itype) in enumerate([
+            ("Orphaned",         "Orphaned Account"),
+            ("Terminated Active","Terminated Employee with Active Account"),
+            ("Post-Term Login",  "Post-Termination Login"),
+            ("Dormant",          "Dormant Account"),
+            ("SoD Violations",   "Toxic Access (SoD Violation)"),
+            ("Privilege Creep",  "Privilege Creep"),
+            ("Generic IDs",      "Shared / Generic Account"),
+            ("Service Accts",    "Service / System Account"),
+            ("Admin Outside IT", "Super-User / Admin Access"),
+            ("MFA Disabled",     "MFA Not Enabled"),
+            ("Pwd Expired",      "Password Never Expired"),
+            ("Duplicates",       "Duplicate System Access"),
+            ("Multi-System",     "Excessive Multi-System Access"),
+            ("No Expiry",        "Contractor Without Expiry Date"),
+            ("Near-Match",       "Near-Match Email"),
+        ]):
+            cc[i%5].metric(lbl, cnt("IssueType",itype))
 
     if not total:
         st.success(
-            f"✅ Audit complete — no issues found for {in_scope_n:,} accounts scanned. "
+            f"✅ Audit complete — no issues found for {in_scope_n:,} accounts. "
             f"Scope: {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}"
         )
-        if excluded_count == len(sys_df_filtered):
-            st.error(
-                f"⚠️ All {len(sys_df_filtered):,} accounts were excluded by the scope filter. "
-                f"Your data dates do not fall within {SCOPE_START.year}. "
-                f"Check the year selector in the sidebar — it is currently set to {SCOPE_START.year}."
-            )
         st.stop()
 
+    st.divider()
+
     # ── TABS ─────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🔎  All Findings",
-        "🛠️  Remediation",
-        "⚖️  Frameworks",
-        "📈  Analysis",
-        "✍️  Audit Opinion",
+    tab1,tab2,tab3,tab4,tab5 = st.tabs([
+        "🔎  Findings","🛠️  Remediation","⚖️  Frameworks","📈  Analysis","✍️  Opinion"
     ])
 
     sdf = findings_df.copy()
@@ -995,81 +1104,57 @@ This confirmation is part of your audit workpaper evidence.
     sdf = sdf.sort_values("_o").drop(columns="_o")
 
     with tab1:
-        f_col1, f_col2 = st.columns([3,1])
-        with f_col1:
-            ft = st.multiselect(
-                "Filter by issue type",
-                options=sorted(findings_df["IssueType"].unique()),
-                default=sorted(findings_df["IssueType"].unique()),
-                label_visibility="visible",
-            )
-        with f_col2:
-            sev_filter = st.selectbox(
-                "Severity",
-                options=["All","🔴 CRITICAL","🟠 HIGH","🟡 MEDIUM"],
-                label_visibility="visible",
-            )
+        t1a,t1b = st.columns([3,1])
+        with t1a:
+            ft = st.multiselect("Issue type", options=sorted(findings_df["IssueType"].unique()),
+                                default=sorted(findings_df["IssueType"].unique()))
+        with t1b:
+            sf = st.selectbox("Severity", ["All","🔴 CRITICAL","🟠 HIGH","🟡 MEDIUM"])
         filtered = sdf[sdf["IssueType"].isin(ft)]
-        if sev_filter != "All":
-            filtered = filtered[filtered["Severity"] == sev_filter]
-
-        disp = [c for c in ["Severity","IssueType","Email","FullName",
-                              "Department","AccessLevel","DaysInactive",
-                              "DaysPostTermination","Detail"] if c in filtered.columns]
-        st.dataframe(
-            filtered[disp],
-            use_container_width=True,
-            hide_index=True,
-            height=420,
+        if sf != "All": filtered = filtered[filtered["Severity"]==sf]
+        disp = [c for c in ["Severity","IssueType","Email","FullName","Department",
+                             "AccessLevel","DaysInactive","DaysPostTermination","Detail"]
+                if c in filtered.columns]
+        st.dataframe(filtered[disp], use_container_width=True, hide_index=True, height=420,
             column_config={
-                "Severity":            st.column_config.TextColumn("Severity",        width="small"),
-                "IssueType":           st.column_config.TextColumn("Issue Type",      width="medium"),
-                "Email":               st.column_config.TextColumn("Email",           width="medium"),
-                "FullName":            st.column_config.TextColumn("Name",            width="medium"),
-                "Department":          st.column_config.TextColumn("Dept",            width="small"),
-                "AccessLevel":         st.column_config.TextColumn("Access Level",    width="small"),
-                "Detail":              st.column_config.TextColumn("Detail",          width="large"),
-                "DaysInactive":        st.column_config.NumberColumn("Days Idle",     width="small"),
-                "DaysPostTermination": st.column_config.NumberColumn("Post-Term Days",width="small"),
-            },
-        )
+                "Severity":            st.column_config.TextColumn("Severity",       width="small"),
+                "IssueType":           st.column_config.TextColumn("Issue Type",     width="medium"),
+                "Detail":              st.column_config.TextColumn("Detail",         width="large"),
+                "DaysInactive":        st.column_config.NumberColumn("Days Idle",    width="small"),
+                "DaysPostTermination": st.column_config.NumberColumn("Post-Term",    width="small"),
+            })
         st.caption(f"Showing {len(filtered):,} of {total:,} findings")
 
     with tab2:
-        st.caption("Every finding has a 4-step action plan, named owner and SLA. Expand each row.")
-        sev_options = ["All severities"] + sorted(sdf["Severity"].unique().tolist(), key=sev_order)
-        rem_sev = st.selectbox("Show severity", sev_options, label_visibility="visible", key="rem_sev_filter")
-        rem_df = sdf if rem_sev == "All severities" else sdf[sdf["Severity"] == rem_sev]
-        for _, row in rem_df.iterrows():
-            sev_icon = "🔴" if "CRITICAL" in str(row.get("Severity","")) else ("🟠" if "HIGH" in str(row.get("Severity","")) else "🟡")
-            with st.expander(
-                f"{sev_icon}  {row.get('IssueType','')}  —  {row.get('Email','')}  |  {row.get('Department','')}",
-                expanded=False,
-            ):
-                d1, d2 = st.columns([2,1])
-                with d1:
-                    st.markdown(f"**Finding:** {row.get('Detail','')}")
-                    st.markdown(f"**Risk:** {row.get('Risk','')}")
-                with d2:
-                    st.markdown(f"**Owner:** `{row.get('Owner','')}`")
-                    st.markdown(f"**SLA:** `{row.get('SLA','')}`")
+        sev_opts = ["All severities"]+sorted(sdf["Severity"].unique(), key=sev_order)
+        rem_sev  = st.selectbox("Filter", sev_opts, key="rem_filter")
+        rem_df   = sdf if rem_sev=="All severities" else sdf[sdf["Severity"]==rem_sev]
+        for _,row in rem_df.iterrows():
+            ico = "🔴" if "CRITICAL" in str(row.get("Severity","")) else ("🟠" if "HIGH" in str(row.get("Severity","")) else "🟡")
+            with st.expander(f"{ico}  {row.get('IssueType','')}  —  {row.get('Email','')}  |  {row.get('Department','')}"):
+                d1,d2 = st.columns([2,1])
+                d1.markdown(f"**Finding:** {row.get('Detail','')}")
+                d1.markdown(f"**Risk:** {row.get('Risk','')}")
+                d2.markdown(f"**Owner:** `{row.get('Owner','')}`")
+                d2.markdown(f"**SLA:** `{row.get('SLA','')}`")
                 st.divider()
-                a1, a2 = st.columns(2)
+                a1,a2 = st.columns(2)
                 a1.markdown(f"**① {row.get('Step 1 – Action','')}**")
                 a1.markdown(f"② {row.get('Step 2 – Action','')}")
                 a2.markdown(f"**③ {row.get('Step 3 – Action','')}**")
                 a2.markdown(f"④ {row.get('Step 4 – Action','')}")
 
     with tab3:
-        if std_context:
-            st.info(f"📄 Standard document uploaded: **{std_file.name}** — findings reference this document in addition to hardcoded framework mappings.")
+        if doc_files:
+            uploaded_doc_names = ", ".join(f.name for f,_ in doc_files)
+            st.info(f"📄 Documents parsed: **{uploaded_doc_names}** — findings are referenced against these documents and hardcoded framework mappings.")
         fw_cols = [c for c in ["Severity","IssueType","Email","FullName","Department",
-                                "SOX Reference","ISO 27001 Ref",
-                                "GDPR Reference","PCI-DSS Reference"] if c in sdf.columns]
+                                "SOX Reference","ISO 27001 Ref","GDPR Reference","PCI-DSS Reference"]
+                   if c in sdf.columns]
         st.dataframe(sdf[fw_cols], use_container_width=True, hide_index=True, height=420)
 
     with tab4:
-        an1, an2, an3 = st.columns(3)
+        an1,an2,an3 = st.columns(3)
         with an1:
             st.markdown("**By severity**")
             bsev = findings_df["Severity"].value_counts().reset_index()
@@ -1086,83 +1171,85 @@ This confirmation is part of your audit workpaper evidence.
                 bdept = findings_df["Department"].value_counts().reset_index()
                 bdept.columns = ["Department","Count"]
                 st.dataframe(bdept, use_container_width=True, hide_index=True)
-
         if "DaysInactive" in findings_df.columns:
-            dormant_data = findings_df[findings_df["DaysInactive"].notna() & (findings_df["IssueType"]=="Dormant Account")]
-            if not dormant_data.empty:
+            dom = findings_df[findings_df["DaysInactive"].notna() & (findings_df["IssueType"]=="Dormant Account")]
+            if not dom.empty:
                 st.markdown("**Dormant account inactivity (days)**")
-                st.bar_chart(dormant_data.set_index("Email")["DaysInactive"])
+                st.bar_chart(dom.set_index("Email")["DaysInactive"])
 
     with tab5:
-        opinion = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_filtered), in_scope_n)
-        st.markdown("**Auto-generated audit opinion — review and edit before signing off.**")
-        if std_context:
-            st.caption(f"Note: You uploaded '{std_file.name}'. Reference this document explicitly in your final opinion where indicated.")
-        edited_opinion = st.text_area("Draft opinion:", value=opinion, height=440, label_visibility="collapsed")
+        opinion = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
+        if doc_files:
+            st.caption(f"Documents uploaded: {', '.join(f.name for f,_ in doc_files)}. Reference these explicitly in your final opinion.")
+        edited_opinion = st.text_area("Draft audit opinion (edit before use):",
+                                      value=opinion, height=440, label_visibility="visible")
         st.caption("This draft is generated from finding counts and severity. It must be reviewed and approved by the responsible auditor before any formal use.")
 
     # ── EXPORT ───────────────────────────────────────────────────────────────
-    st.markdown("---")
-    exp1, exp2 = st.columns([3,1])
-    with exp1:
-        opinion_for_export = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_filtered), in_scope_n)
-        ref_slug = (meta.get("ref") or "Audit").replace(" ","_").replace("/","-")
+    st.divider()
+    ex1,ex2 = st.columns([3,1])
+    with ex1:
+        op_export = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
+        ref_slug  = (meta.get("ref") or "Audit").replace(" ","_").replace("/","-")
         st.download_button(
             label="📥  Download Workpaper-Ready Audit Report (.xlsx)",
-            data=to_excel_bytes(
-                findings_df, hr_df_filtered, sys_df_filtered,
-                SCOPE_START, SCOPE_END, excluded_count,
-                meta, opinion_for_export,
-            ),
+            data=to_excel_bytes(findings_df, hr_df_f, sys_df_f, SCOPE_START, SCOPE_END,
+                                excluded_count, meta, op_export),
             file_name=f"IAR_{ref_slug}_{datetime.today().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary",
-            use_container_width=True,
+            type="primary", use_container_width=True,
         )
-    with exp2:
+    with ex2:
         st.metric("Report sheets", "8+")
 
-elif hr_file or sys_file:
-    st.info("📂 Upload both HR Master and System Access files to continue.")
+elif uploaded_files and (not hr_file or not sys_file):
+    if not hr_file:
+        st.warning("⚠️ HR Master not identified. Rename your file to include `HR_Master` or use the manual selector above.")
+    if not sys_file:
+        st.warning("⚠️ System Access file not identified. Rename your file to include `System_Access` or use the manual selector above.")
 
 else:
-    # Landing page
-    st.markdown("### How it works")
-    lp1, lp2, lp3, lp4 = st.columns(4)
-    lp1.info("**① Upload files**\n\nHR Master + System Access list. Optionally add your audit standard.")
-    lp2.info("**② Confirm data**\n\nConfirm the extract is complete — becomes part of your workpaper evidence.")
-    lp3.info("**③ Set scope & GO**\n\nSelect the audit year or custom date range. Click GO to lock and scan.")
-    lp4.info("**④ Download report**\n\nWorkpaper-ready Excel: findings, remediation, framework refs, audit opinion.")
+    # ── LANDING PAGE ─────────────────────────────────────────────────────────
+    st.markdown("### How to use this tool")
+    l1,l2,l3,l4 = st.columns(4)
+    l1.info("**① Upload documents**\n\nDrop all your audit files into the single upload zone — HR Master, System Access list, SOA, policies, procedures. The tool auto-detects each one.")
+    l2.info("**② Confirm population**\n\nConfirm the HR and system extracts are complete and unfiltered. This becomes part of your workpaper evidence.")
+    l3.info("**③ Set scope & run**\n\nSelect the audit year (default: previous year). Pick specific departments if needed. Click GO to lock and scan.")
+    l4.info("**④ Download report**\n\nGet a workpaper-ready Excel: engagement cover, audit opinion, all findings with 4-step remediation, compliance framework references.")
+
+    st.divider()
+    st.markdown("### Documents the tool uses")
+    d1,d2 = st.columns(2)
+    with d1:
+        st.markdown("**Required for audit checks to run:**")
+        st.markdown("- `HR_Master_2025.xlsx` — employee list with EmploymentStatus, ContractType, TerminationDate")
+        st.markdown("- `System_Access_2025.xlsx` — system accounts with AccessLevel, LastLoginDate, MFA, PasswordLastSet")
+    with d2:
+        st.markdown("**Optional — enriches the findings:**")
+        st.markdown("- `SOA_ISO27001.xlsx` — Statement of Applicability, SoD rules extracted automatically")
+        st.markdown("- `Access_Control_Policy.pdf` — cited in framework references tab")
+        st.markdown("- `JML_Procedure.pdf` — cited in terminated/orphaned findings")
+        st.markdown("- `Risk_Register.xlsx` — gives context on known vs new risks")
 
     st.divider()
     st.markdown("### 15 automated checks")
-    ch1, ch2, ch3 = st.columns(3)
-    checks_display = [
-        ("🔴 Critical", [
-            ("Orphaned accounts",            "Email in system, no HR record"),
-            ("Terminated with active access","HR shows leaver, account still enabled"),
-            ("Post-termination login",       "Logged in after leaving — potential breach"),
-            ("SoD violations",              "User can initiate AND approve transactions"),
-        ]),
-        ("🟠 High", [
-            ("Dormant accounts",            "No login in 90+ days — idle target"),
-            ("Privilege creep",             "4+ roles accumulated across transfers"),
-            ("Generic / shared accounts",   "admin@, helpdesk@ — no individual owner"),
-            ("Super-user outside IT",       "Admin rights for non-IT business users"),
-            ("MFA not enabled",             "One password = full account access"),
-            ("Contractor without expiry",   "No end-date — access never expires"),
-        ]),
-        ("🟡 Medium", [
-            ("Service accounts",           "svc_, batch_ — no named human owner"),
-            ("Password never expired",     "Stale credentials — primary breach vector"),
-            ("Duplicate accounts",         "Same person, multiple active IDs"),
-            ("Excessive system access",    "More systems than role justifies"),
-            ("Near-match emails",          "Typos, aliases, impersonation attempts"),
-        ]),
-    ]
-    for col, (sev_label, items) in zip([ch1,ch2,ch3], checks_display):
-        col.markdown(f"**{sev_label}**")
-        for name, desc in items:
-            col.markdown(f"**{name}** — {desc}")
-        col.markdown("")
+    ch1,ch2,ch3 = st.columns(3)
+    for i,(sev,name,desc) in enumerate([
+        ("🔴 Critical","Orphaned accounts",            "Email in system, no HR record"),
+        ("🔴 Critical","Terminated with active access","HR shows leaver, account still enabled"),
+        ("🔴 Critical","Post-termination login",       "Logged in after leaving — potential breach"),
+        ("🔴 Critical","SoD violations",              "Can initiate AND approve — fraud risk"),
+        ("🟠 High",    "Dormant accounts",            "No login in 90+ days"),
+        ("🟠 High",    "Privilege creep",             "4+ roles from multiple transfers"),
+        ("🟠 High",    "Generic / shared accounts",   "admin@, helpdesk@ — no audit trail"),
+        ("🟠 High",    "Super-user outside IT",       "Admin rights for non-IT users"),
+        ("🟠 High",    "MFA not enabled",             "Single password = full access"),
+        ("🟠 High",    "Contractor without expiry",   "No end-date — access never expires"),
+        ("🟡 Medium",  "Service accounts",            "svc_, batch_ — no named owner"),
+        ("🟡 Medium",  "Password never expired",      "Stale credentials — breach vector"),
+        ("🟡 Medium",  "Duplicate accounts",          "Same person, multiple IDs"),
+        ("🟡 Medium",  "Excessive system access",     "More systems than role justifies"),
+        ("🟡 Medium",  "Near-match emails",           "Typos, aliases, impersonation"),
+    ]):
+        [ch1,ch2,ch3][i%3].markdown(f"**{sev}** — **{name}:** {desc}")
 
