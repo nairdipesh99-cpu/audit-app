@@ -667,39 +667,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] { background: #0a0e1a; }
-[data-testid="stSidebar"] { background: #0f1525; border-right: 1px solid #1e2d4a; }
-[data-testid="stSidebar"] * { color: #c8d6f0 !important; }
-[data-testid="stSidebar"] .stSelectbox label,
-[data-testid="stSidebar"] .stTextInput label,
-[data-testid="stSidebar"] .stSlider label { color: #7a94c1 !important; font-size:11px !important; text-transform:uppercase; letter-spacing:.06em; }
-[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3 { color:#e8f0ff !important; font-size:13px !important; font-weight:600 !important; }
-section.main > div { padding-top: 1rem; }
-.block-container { max-width: 1400px; padding: 0 2rem; }
-h1 { color: #e8f0ff !important; font-size: 26px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
-h2 { color: #c8d6f0 !important; font-size: 16px !important; font-weight: 600 !important; }
-h3 { color: #7a94c1 !important; font-size: 13px !important; font-weight: 500 !important; text-transform: uppercase; letter-spacing: .06em; }
-p, li, .stMarkdown { color: #8a9dc0 !important; }
-.stDataFrame { border: 1px solid #1e2d4a !important; border-radius: 8px !important; }
-.stTabs [data-baseweb="tab-list"] { background: #0f1525; border-bottom: 1px solid #1e2d4a; gap: 0; }
-.stTabs [data-baseweb="tab"] { background: transparent; color: #7a94c1; border: none; padding: 10px 20px; font-size: 13px; font-weight: 500; }
-.stTabs [aria-selected="true"] { background: transparent; color: #4d9fff; border-bottom: 2px solid #4d9fff; }
-.stMetric { background: #0f1525; border: 1px solid #1e2d4a; border-radius: 10px; padding: 14px 18px; }
-.stMetric label { color: #7a94c1 !important; font-size: 11px !important; text-transform: uppercase; letter-spacing: .05em; }
-.stMetric [data-testid="metric-container"] > div:nth-child(2) { color: #e8f0ff !important; font-size: 24px !important; font-weight: 700 !important; }
-.stButton button { border-radius: 6px; font-weight: 600; font-size: 12px; }
-.stFileUploader { background: #0f1525; border: 1px dashed #1e2d4a; border-radius: 10px; padding: 8px; }
-.stFileUploader label { color: #7a94c1 !important; font-size: 12px !important; }
-.stSuccess { background: #0a1f14 !important; border: 1px solid #1a4d2e !important; color: #4dbb7a !important; border-radius: 8px; }
-.stInfo { background: #0a1428 !important; border: 1px solid #1a3a5c !important; color: #4d9fff !important; border-radius: 8px; }
-.stWarning { background: #1f1600 !important; border: 1px solid #4d3800 !important; color: #ffa520 !important; border-radius: 8px; }
-.stError { background: #1f0a0a !important; border: 1px solid #4d1a1a !important; color: #ff6b6b !important; border-radius: 8px; }
-div[data-testid="stExpander"] { background: #0f1525; border: 1px solid #1e2d4a; border-radius: 8px; }
-div[data-testid="stExpander"] summary { color: #7a94c1 !important; }
-</style>
-""", unsafe_allow_html=True)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR
@@ -790,15 +758,9 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────────────────────
 #  HEADER
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style="display:flex;align-items:center;gap:16px;padding:20px 0 8px;border-bottom:1px solid #1e2d4a;margin-bottom:24px">
-  <div style="width:44px;height:44px;background:linear-gradient(135deg,#1a3a6e,#0d2040);border:1px solid #2a4a8e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px">🛡️</div>
-  <div>
-    <div style="font-size:22px;font-weight:700;color:#e8f0ff;letter-spacing:-0.02em">Identity & Access Management Auditor</div>
-    <div style="font-size:12px;color:#7a94c1;margin-top:2px">15 automated checks · ISO 27001 · SOX · GDPR · PCI-DSS · Workpaper-ready output</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+st.title("🛡️ Identity & Access Management Auditor")
+st.caption("15 automated checks · ISO 27001 · SOX · GDPR · PCI-DSS · Workpaper-ready export · 10-minute audit")
+st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  FILE UPLOAD — 3 boxes
@@ -807,27 +769,21 @@ st.markdown("### Upload files")
 up1, up2, up3 = st.columns(3)
 
 with up1:
-    st.markdown('<div style="font-size:11px;color:#7a94c1;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">① HR Master</div>', unsafe_allow_html=True)
-    hr_file = st.file_uploader("HR Master", type=["xlsx","xls","csv"],
-                                label_visibility="collapsed", key="hr_upload")
-    if hr_file:
-        st.markdown(f'<div style="font-size:11px;color:#4dbb7a">✓ {hr_file.name}</div>', unsafe_allow_html=True)
+    st.markdown("**① HR Master**")
+    hr_file = st.file_uploader("Upload HR Master (.xlsx / .csv)", type=["xlsx","xls","csv"],
+                                label_visibility="visible", key="hr_upload")
 
 with up2:
-    st.markdown('<div style="font-size:11px;color:#7a94c1;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">② System Access List</div>', unsafe_allow_html=True)
-    sys_file = st.file_uploader("System Access", type=["xlsx","xls","csv"],
-                                 label_visibility="collapsed", key="sys_upload")
-    if sys_file:
-        st.markdown(f'<div style="font-size:11px;color:#4dbb7a">✓ {sys_file.name}</div>', unsafe_allow_html=True)
+    st.markdown("**② System Access List**")
+    sys_file = st.file_uploader("Upload System Access (.xlsx / .csv)", type=["xlsx","xls","csv"],
+                                 label_visibility="visible", key="sys_upload")
 
 with up3:
-    st.markdown('<div style="font-size:11px;color:#7a94c1;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">③ Audit Standard / Policy (optional)</div>', unsafe_allow_html=True)
-    std_file = st.file_uploader("Standard", type=["pdf","txt","docx"],
-                                 label_visibility="collapsed", key="std_upload")
-    if std_file:
-        st.markdown(f'<div style="font-size:11px;color:#4dbb7a">✓ {std_file.name}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div style="font-size:11px;color:#4a5a7a">Upload your ISO 27001 SOA, access control policy or audit standard. Findings will cite it directly.</div>', unsafe_allow_html=True)
+    st.markdown("**③ Audit Standard / Policy** *(optional)*")
+    std_file = st.file_uploader("Upload standard (PDF, TXT, DOCX)", type=["pdf","txt","docx"],
+                                 label_visibility="visible", key="std_upload")
+    if not std_file:
+        st.caption("Upload your ISO 27001 SOA, access control policy or audit standard. Findings will cite it directly.")
 
 # Parse standard document if uploaded
 std_context = ""
@@ -902,7 +858,7 @@ if hr_file and sys_file:
             help="Select specific departments to narrow audit scope — e.g. Finance, IT only"
         )
     with sc2:
-        st.markdown("<br>", unsafe_allow_html=True)
+
         if selected_depts:
             st.info(f"Scanning {len(selected_depts)} dept(s)")
         else:
@@ -960,16 +916,13 @@ This confirmation is part of your audit workpaper evidence.
     total      = len(findings_df)
 
     # ── SCOPE BANNER ─────────────────────────────────────────────────────────
-    dept_label = f"{len(selected_depts)} departments" if selected_depts else "all departments"
-    st.markdown(f"""
-<div style="background:#0a1f14;border:1px solid #1a4d2e;border-radius:8px;padding:12px 18px;margin-bottom:20px;display:flex;gap:40px;flex-wrap:wrap">
-  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Scope locked</span><br><span style="color:#e8f0ff;font-weight:600">{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}</span></div>
-  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Scanned</span><br><span style="color:#e8f0ff;font-weight:600">{in_scope_n:,} of {len(sys_df_filtered):,} accounts</span></div>
-  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Departments</span><br><span style="color:#e8f0ff;font-weight:600">{dept_label}</span></div>
-  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Standard</span><br><span style="color:#e8f0ff;font-weight:600">{meta.get("standard","—")}</span></div>
-  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Excluded</span><br><span style="color:#8a9dc0;font-weight:600">{excluded_count:,} out of scope</span></div>
-</div>
-""", unsafe_allow_html=True)
+    dept_label = f"{len(selected_depts)} dept(s)" if selected_depts else "All departments"
+    st.success(
+        f"🔒 **Scope locked:** {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')} "
+        f"| **{in_scope_n:,}** of {len(sys_df_filtered):,} accounts scanned "
+        f"| {dept_label} | Standard: {meta.get('standard','—')} "
+        f"| {excluded_count:,} excluded"
+    )
 
     # ── METRIC CARDS ──────────────────────────────────────────────────────────
     st.markdown("### Audit results")
@@ -990,7 +943,7 @@ This confirmation is part of your audit workpaper evidence.
     mc[4].metric("Accounts Scanned", f"{in_scope_n:,}")
 
     if total:
-        st.markdown("<br>", unsafe_allow_html=True)
+
         cc = st.columns(5)
         checks_list = [
             ("Orphaned",          "Orphaned Account"),
@@ -1176,47 +1129,40 @@ else:
     # Landing page
     st.markdown("### How it works")
     lp1, lp2, lp3, lp4 = st.columns(4)
-    for col, num, title, desc in [
-        (lp1,"①","Upload files","HR Master + System Access list. Optionally add your audit standard."),
-        (lp2,"②","Confirm data","Confirm the extract is complete — this becomes part of your workpaper evidence."),
-        (lp3,"③","Set scope & GO","Select the audit year or custom date range. Click GO to lock and scan."),
-        (lp4,"④","Download report","Get a workpaper-ready Excel with findings, remediation, framework refs and audit opinion."),
-    ]:
-        col.markdown(f"""
-<div style="background:#0f1525;border:1px solid #1e2d4a;border-radius:10px;padding:16px">
-  <div style="font-size:20px;font-weight:700;color:#4d9fff;margin-bottom:6px">{num}</div>
-  <div style="font-size:13px;font-weight:600;color:#c8d6f0;margin-bottom:4px">{title}</div>
-  <div style="font-size:12px;color:#7a94c1;line-height:1.5">{desc}</div>
-</div>""", unsafe_allow_html=True)
+    lp1.info("**① Upload files**\n\nHR Master + System Access list. Optionally add your audit standard.")
+    lp2.info("**② Confirm data**\n\nConfirm the extract is complete — becomes part of your workpaper evidence.")
+    lp3.info("**③ Set scope & GO**\n\nSelect the audit year or custom date range. Click GO to lock and scan.")
+    lp4.info("**④ Download report**\n\nWorkpaper-ready Excel: findings, remediation, framework refs, audit opinion.")
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
     st.markdown("### 15 automated checks")
     ch1, ch2, ch3 = st.columns(3)
     checks_display = [
-        ("🔴","Orphaned accounts",            "Email in system, no HR record"),
-        ("🔴","Terminated with active access", "HR shows leaver, account still on"),
-        ("🔴","Post-termination login",        "Logged in after leaving — breach risk"),
-        ("🔴","SoD violations",               "Can initiate AND approve transactions"),
-        ("🟠","Dormant accounts",             "No login in 90+ days"),
-        ("🟠","Privilege creep",              "4+ roles accumulated across transfers"),
-        ("🟠","Generic/shared accounts",      "admin@, helpdesk@ — no audit trail"),
-        ("🟠","Super-user outside IT",        "Admin rights for non-IT business users"),
-        ("🟠","MFA not enabled",              "Single password = full account access"),
-        ("🟠","Contractor without expiry",    "No end-date — access persists forever"),
-        ("🟡","Service accounts",            "svc_, batch_ — no named owner"),
-        ("🟡","Password never expired",      "Stale credentials — breach vector"),
-        ("🟡","Duplicate accounts",          "Same person, multiple IDs"),
-        ("🟡","Excessive system access",     "More systems than role justifies"),
-        ("🟡","Near-match emails",           "Typos, aliases, impersonation"),
+        ("🔴 Critical", [
+            ("Orphaned accounts",            "Email in system, no HR record"),
+            ("Terminated with active access","HR shows leaver, account still enabled"),
+            ("Post-termination login",       "Logged in after leaving — potential breach"),
+            ("SoD violations",              "User can initiate AND approve transactions"),
+        ]),
+        ("🟠 High", [
+            ("Dormant accounts",            "No login in 90+ days — idle target"),
+            ("Privilege creep",             "4+ roles accumulated across transfers"),
+            ("Generic / shared accounts",   "admin@, helpdesk@ — no individual owner"),
+            ("Super-user outside IT",       "Admin rights for non-IT business users"),
+            ("MFA not enabled",             "One password = full account access"),
+            ("Contractor without expiry",   "No end-date — access never expires"),
+        ]),
+        ("🟡 Medium", [
+            ("Service accounts",           "svc_, batch_ — no named human owner"),
+            ("Password never expired",     "Stale credentials — primary breach vector"),
+            ("Duplicate accounts",         "Same person, multiple active IDs"),
+            ("Excessive system access",    "More systems than role justifies"),
+            ("Near-match emails",          "Typos, aliases, impersonation attempts"),
+        ]),
     ]
-    for i, (sev, name, desc) in enumerate(checks_display):
-        col = [ch1,ch2,ch3][i%3]
-        col.markdown(f"""
-<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #1e2d4a">
-  <span style="font-size:14px;flex-shrink:0">{sev}</span>
-  <div>
-    <div style="font-size:12px;font-weight:600;color:#c8d6f0">{name}</div>
-    <div style="font-size:11px;color:#7a94c1">{desc}</div>
-  </div>
-</div>""", unsafe_allow_html=True)
+    for col, (sev_label, items) in zip([ch1,ch2,ch3], checks_display):
+        col.markdown(f"**{sev_label}**")
+        for name, desc in items:
+            col.markdown(f"**{name}** — {desc}")
+        col.markdown("")
 
