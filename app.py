@@ -458,7 +458,12 @@ def to_excel_bytes(
             sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
             ws = writer.sheets[sheet_name]
             for col_num, col in enumerate(sheet_df.columns):
-                max_len = min(max(sheet_df[col].astype(str).map(len).max(), len(col)) + 2, 60)
+                try:
+                    col_values = sheet_df[col].fillna('').astype(str)
+                    data_max   = col_values.map(len).max() if len(col_values) > 0 else 0
+                    max_len    = min(max(int(data_max), len(str(col))) + 2, 60)
+                except Exception:
+                    max_len = len(str(col)) + 2
                 ws.set_column(col_num, col_num, max_len)
             # Colour rows by severity
             for row_num, (_, row) in enumerate(sheet_df.iterrows(), start=1):
