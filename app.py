@@ -638,8 +638,10 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
 #  SESSION STATE
 # ─────────────────────────────────────────────────────────────────────────────
 today = date.today()
-if "ss_start"  not in st.session_state: st.session_state["ss_start"]  = date(today.year, 1, 1)
-if "ss_end"    not in st.session_state: st.session_state["ss_end"]    = date(today.year, 12, 31)
+# Default to PREVIOUS year — auditors typically review the prior year's data
+_default_year = today.year - 1
+if "ss_start"  not in st.session_state: st.session_state["ss_start"]  = date(_default_year, 1, 1)
+if "ss_end"    not in st.session_state: st.session_state["ss_end"]    = date(_default_year, 12, 31)
 if "locked"    not in st.session_state: st.session_state["locked"]    = False
 if "confirmed" not in st.session_state: st.session_state["confirmed"] = False
 
@@ -650,7 +652,7 @@ def _last_q():
     else:    qs,qe=date(today.year,(q-1)*3+1,1),date(today.year,q*3,me[q*3-1])
     st.session_state.update(ss_start=qs,ss_end=qe,locked=False)
 def _last_6():  st.session_state.update(ss_start=today-timedelta(days=182), ss_end=today, locked=False)
-def _full_yr(): st.session_state.update(ss_start=date(today.year,1,1), ss_end=date(today.year,12,31), locked=False)
+def _full_yr(): st.session_state.update(ss_start=date(today.year-1,1,1), ss_end=date(today.year-1,12,31), locked=False)
 def _date_chg():st.session_state.update(locked=False)  # dates changed — re-run needed but data still confirmed
 def _go():      st.session_state["locked"] = True
 
@@ -687,11 +689,26 @@ with st.sidebar:
     st.divider()
     st.subheader("📅 Audit Scope Period")
     st.caption("Pick a preset or enter dates → click GO to lock and scan.")
+
+    # Year selector — most audits review a specific calendar year
+    _yr_options = [today.year - 2, today.year - 1, today.year]
+    _yr_labels  = [str(y) for y in _yr_options]
+    _selected_yr = st.selectbox(
+        "Select audit year",
+        options=_yr_options,
+        index=1,               # default = previous year
+        format_func=lambda y: f"{y} (previous year)" if y == today.year-1 else (f"{y} (current year)" if y == today.year else str(y)),
+        key="audit_year_sel",
+    )
+    def _set_year():
+        y = st.session_state["audit_year_sel"]
+        st.session_state.update(ss_start=date(y,1,1), ss_end=date(y,12,31), locked=False)
+
     c1, c2 = st.columns(2)
-    c1.button("This Month",    use_container_width=True, on_click=_this_month)
-    c1.button("Last Quarter",  use_container_width=True, on_click=_last_q)
-    c2.button("Last 6 Months", use_container_width=True, on_click=_last_6)
-    c2.button("Full Year",     use_container_width=True, on_click=_full_yr)
+    c1.button("Set Full Year",  use_container_width=True, on_click=_set_year, type="primary")
+    c1.button("Last Quarter",   use_container_width=True, on_click=_last_q)
+    c2.button("Last 6 Months",  use_container_width=True, on_click=_last_6)
+    c2.button("This Month",     use_container_width=True, on_click=_this_month)
     st.write("")
     d1, d2 = st.columns(2)
     with d1: st.date_input("From", key="ss_start", on_change=_date_chg)
@@ -796,6 +813,33 @@ if hr_file and sys_file:
         f"| **{in_scope_n:,}** of {len(sys_df):,} accounts scanned "
         f"| {excluded_count:,} excluded"
     )
+
+    # ── Debug panel — remove before production ───────────────────────────────
+    with st.expander("🔧 Diagnostic info (click to expand if no findings appear)"):
+        st.markdown(f"""
+| Check | Result |
+|---|---|
+| HR rows loaded | `{len(hr_df)}` |
+| System rows loaded | `{len(sys_df)}` |
+| HR Email column exists | `{"Email" in hr_df.columns}` |
+| HR EmploymentStatus exists | `{"EmploymentStatus" in hr_df.columns}` |
+| Sys Email column exists | `{"Email" in sys_df.columns}` |
+| Sys AccessLevel exists | `{"AccessLevel" in sys_df.columns}` |
+| Sys MFA column exists | `{"MFA" in sys_df.columns}` |
+| Sys LastLoginDate exists | `{"LastLoginDate" in sys_df.columns}` |
+| Accounts excluded by scope | `{excluded_count}` |
+| Accounts in scope | `{in_scope_n}` |
+| Raw findings count | `{len(findings_df)}` |
+| Scope start | `{SCOPE_START}` |
+| Scope end | `{SCOPE_END}` |
+| HR EmploymentStatus values | `{hr_df["EmploymentStatus"].value_counts().to_dict() if "EmploymentStatus" in hr_df.columns else "MISSING"}` |
+| Sys MFA values | `{sys_df["MFA"].value_counts().to_dict() if "MFA" in sys_df.columns else "MISSING"}` |
+| Sample HR emails | `{list(hr_df["Email"].str.lower().head(3))}` |
+| Sample Sys emails | `{list(sys_df["Email"].str.lower().head(3))}` |
+| HR emails matching Sys | `{len(set(hr_df["Email"].str.lower()) & set(sys_df["Email"].str.lower()))}` |
+| Sys emails NOT in HR | `{len(set(sys_df["Email"].str.lower()) - set(hr_df["Email"].str.lower()))}` |
+        """)
+
 
     # ── Metrics ───────────────────────────────────────────────────────────────
     st.header("📊 Audit Summary")
