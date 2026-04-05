@@ -267,10 +267,18 @@ HIGH_RISK_ACCESS = ["Admin","SuperAdmin","DBAdmin","Root","FullControl","SysAdmi
 #  HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 def parse_date(val):
-    if val is None or (isinstance(val, float) and pd.isna(val)):
+    if val is None:
         return None
     try:
-        return pd.to_datetime(val)
+        if isinstance(val, float) and (pd.isna(val) or val != val):
+            return None
+        dt = pd.to_datetime(val, errors='coerce')
+        if pd.isna(dt):
+            return None
+        # Strip timezone so arithmetic against datetime.today() never crashes
+        if hasattr(dt, 'tzinfo') and dt.tzinfo is not None:
+            dt = dt.tz_localize(None) if hasattr(dt, 'tz_localize') else dt.replace(tzinfo=None)
+        return dt
     except Exception:
         return None
 
@@ -352,8 +360,16 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         acct_created = parse_date(row.get("AccountCreatedDate"))
         mfa_status   = str(row.get("MFA", "")).strip().lower()
 
-        days_inactive  = int((today - last_login).days)  if last_login else None
-        pwd_age_days   = int((today - pwd_set).days)     if pwd_set    else None
+        def safe_days(dt):
+            if dt is None:
+                return None
+            try:
+                d = (today - dt).days
+                return int(d) if d == d else None
+            except Exception:
+                return None
+        days_inactive = safe_days(last_login)
+        pwd_age_days  = safe_days(pwd_set)
 
         # ── SCOPE CHECK ──────────────────────────────────────────────────────
         anchor = acct_created or last_login or pwd_set
