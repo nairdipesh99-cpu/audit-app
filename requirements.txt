@@ -1,5 +1,6 @@
-streamlit
-pandas
-thefuzz
-xlsxwriter
-openpyxl
+streamlit>=1.35.0
+pandas>=2.0.0
+thefuzz>=0.22.1
+python-Levenshtein>=0.25.0
+openpyxl>=3.1.0
+xlsxwriter>=3.2.0
