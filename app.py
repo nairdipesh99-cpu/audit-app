@@ -1,68 +1,96 @@
 import streamlit as st
-import anthropic
-from pypdf import PdfReader
-import docx
+import pandas as pd
+from thefuzz import fuzz
+import io
 
-# 1. SETUP & BRAIN (CLAUDE AI)
-def get_claude_response(standard_text, policy_text):
-    client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-    
-    prompt = f"""
-    You are a Senior IT Auditor. I will provide you with an Audit Standard and a Company Policy.
-    
-    STANDARD:
-    {standard_text[:4000]} 
-    
-    POLICY:
-    {policy_text[:4000]}
-    
-    TASK:
-    1. Identify the key controls required by the Standard.
-    2. Check if the Policy meets these controls.
-    3. For every Gap, provide a 'Remediation Action'.
-    
-    Format your response as a professional table with: Control ID, Status (Compliant/Gap), and Auditor's Comments.
-    """
-    
-    message = client.messages.create(
-        model="claude-3-haiku-20240307",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return message.content[0].text
+st.set_page_config(page_title="JML Ghost Hunter Pro", layout="wide")
 
-# 2. TEXT EXTRACTION (WORKS FOR ANY DOC)
-def extract_text(file):
-    if file.name.lower().endswith(".pdf"):
-        return "\n".join([p.extract_text() for p in PdfReader(file).pages])
-    elif file.name.lower().endswith(".docx"):
-        return "\n".join([p.text for p in docx.Document(file).paragraphs])
-    return str(file.read(), "utf-8")
+st.title("👻 JML Ghost Hunter: Enterprise Identity Auditor")
+st.markdown("""
+This tool performs **100% Population Testing** by reconciling HR records against System Access. 
+It uses **Fuzzy Matching** to detect nicknames and typos that standard Excel VLOOKUPs miss.
+""")
 
-# 3. THE INTERFACE
-st.set_page_config(page_title="Ultimate AI Auditor", layout="wide")
-st.title("🤖 Ultimate AI Audit Assistant")
-st.markdown("Upload **ANY** Standard and **ANY** Policy for a full Gap Analysis.")
+# --- 1. UPLOADS ---
+col1, col2 = st.columns(2)
+with col1:
+    hr_file = st.file_uploader("📂 Upload HR Master (Active Employees)", type=["xlsx"])
+with col2:
+    sys_file = st.file_uploader("🔑 Upload System Access Export", type=["xlsx"])
 
-with st.sidebar:
-    st.header("Upload Center")
-    std_file = st.file_uploader("📁 Upload Audit Standard", type=["pdf", "docx", "txt"])
-    pol_file = st.file_uploader("📄 Upload Company Policy", type=["pdf", "docx", "txt"])
-    analyze_button = st.button("🚀 Run Full AI Audit")
+if hr_file and sys_file:
+    hr_df = pd.read_excel(hr_file)
+    sys_df = pd.read_excel(sys_file)
 
-if analyze_button:
-    if std_file and pol_file:
-        with st.spinner("Claude is reading your documents... this takes about 30 seconds."):
-            try:
-                std_txt = extract_text(std_file)
-                pol_txt = extract_text(pol_file)
-                
-                report = get_claude_response(std_txt, pol_txt)
-                
-                st.subheader("📋 AI Gap Analysis Report")
-                st.markdown(report)
-                st.success("Audit Complete!")
-            except Exception as e:
-                st.error(f"Make sure your API Key is in 'Advanced Settings'. Error: {e}")
+    st.divider()
+    
+    # --- 2. MATCHING LOGIC ---
+    zombies = []
+    matches = []
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Create a list of HR emails for fast checking
+    hr_emails = hr_df['Email'].str.lower().tolist()
+    hr_names = hr_df['Full Name'].tolist()
+
+    total_accounts = len(sys_df)
+    
+    for index, row in sys_df.iterrows():
+        sys_email = str(row['Email']).lower()
+        sys_name = str(row['Account Name'])
+        
+        # Level 1: Exact Email Match
+        if sys_email in hr_emails:
+            matches.append(row)
+        else:
+            # Level 2: Fuzzy Name Match (The "Rare" Audit Logic)
+            best_score = 0
+            best_match_name = ""
+            
+            for hr_name in hr_names:
+                score = fuzz.token_sort_ratio(sys_name, hr_name)
+                if score > best_score:
+                    best_score = score
+                    best_match_name = hr_name
+            
+            if best_score > 80: # If it's a likely match (e.g., Chris vs Christopher)
+                row['Audit_Note'] = f"Likely Match: {best_match_name} ({best_score}%)"
+                matches.append(row)
+            else:
+                # Level 3: It's a Zombie!
+                row['Audit_Note'] = "CRITICAL: No matching HR record found."
+                zombies.append(row)
+        
+        # Update progress
+        progress_bar.progress((index + 1) / total_accounts)
+        status_text.text(f"Auditing account {index + 1} of {total_accounts}...")
+
+    # --- 3. RESULTS DASHBOARD ---
+    zombie_df = pd.DataFrame(zombies)
+    
+    st.subheader("📊 Audit Summary")
+    s1, s2, s3 = st.columns(3)
+    s1.metric("Total Accounts Checked", total_accounts)
+    s2.metric("Matched Identities", len(matches), delta="Safe", delta_color="normal")
+    s3.metric("Ghost Accounts Found", len(zombies), delta="Unsafe", delta_color="inverse")
+
+    if not zombie_df.empty:
+        st.error("### 🚩 High Risk: Orphaned Accounts Detected")
+        st.dataframe(zombie_df, use_container_width=True)
+        
+        # --- 4. EXPORT FOR REPORTING ---
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            zombie_df.to_excel(writer, index=False, sheet_name='Audit_Findings')
+        
+        st.download_button(
+            label="📥 Download Audit Findings for Report",
+            data=output.getvalue(),
+            file_name="JML_Audit_Findings.xlsx",
+            mime="application/vnd.ms-excel"
+        )
     else:
-        st.warning("Please upload both files first!")
+        st.balloons()
+        st.success("Audit Clean! 100% of accounts mapped to active employees.")
