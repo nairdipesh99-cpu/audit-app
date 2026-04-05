@@ -429,6 +429,13 @@ def run_audit(
 # ─────────────────────────────────────────────────────────────────────────────
 #  EXCEL EXPORT  — multi-sheet with remediation
 # ─────────────────────────────────────────────────────────────────────────────
+def sanitise_sheet_name(name: str) -> str:
+    """Strip characters Excel forbids in sheet names and enforce 31-char limit."""
+    for ch in ['/', '\\', '*', '?', '[', ']', ':']:
+        name = name.replace(ch, '-')
+    return name[:31]
+
+
 def to_excel_bytes(
     df: pd.DataFrame,
     hr_df: pd.DataFrame,
@@ -551,7 +558,7 @@ def to_excel_bytes(
         # Sheets per issue type
         for issue_type in df["IssueType"].unique():
             subset = df[df["IssueType"] == issue_type]
-            sheet_name = issue_type[:31]
+            sheet_name = sanitise_sheet_name(issue_type)
             write_sheet(subset, sheet_name)
 
         # Raw data sheets for reference
