@@ -638,7 +638,6 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
 #  SESSION STATE
 # ─────────────────────────────────────────────────────────────────────────────
 today = date.today()
-# Default to PREVIOUS year — auditors typically review the prior year's data
 _default_year = today.year - 1
 if "ss_start"  not in st.session_state: st.session_state["ss_start"]  = date(_default_year, 1, 1)
 if "ss_end"    not in st.session_state: st.session_state["ss_end"]    = date(_default_year, 12, 31)
@@ -647,77 +646,113 @@ if "confirmed" not in st.session_state: st.session_state["confirmed"] = False
 
 def _this_month():  st.session_state.update(ss_start=today.replace(day=1), ss_end=today, locked=False)
 def _last_q():
-    q=( today.month-1)//3; me=[31,28,31,30,31,30,31,31,30,31,30,31]
+    q=(today.month-1)//3; me=[31,28,31,30,31,30,31,31,30,31,30,31]
     if q==0: qs,qe=date(today.year-1,10,1),date(today.year-1,12,31)
     else:    qs,qe=date(today.year,(q-1)*3+1,1),date(today.year,q*3,me[q*3-1])
     st.session_state.update(ss_start=qs,ss_end=qe,locked=False)
-def _last_6():  st.session_state.update(ss_start=today-timedelta(days=182), ss_end=today, locked=False)
-def _full_yr(): st.session_state.update(ss_start=date(today.year-1,1,1), ss_end=date(today.year-1,12,31), locked=False)
-def _date_chg():st.session_state.update(locked=False)  # dates changed — re-run needed but data still confirmed
+def _last_6():  st.session_state.update(ss_start=today-timedelta(days=182),ss_end=today,locked=False)
+def _date_chg():st.session_state["locked"] = False
 def _go():      st.session_state["locked"] = True
+def _set_year():
+    y = st.session_state["audit_year_sel"]
+    st.session_state.update(ss_start=date(y,1,1),ss_end=date(y,12,31),locked=False)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  UI
+#  PAGE CONFIG & GLOBAL STYLE
 # ─────────────────────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Enterprise Identity Auditor", layout="wide", page_icon="🛡️")
-st.title("🛡️ Enterprise Identity Auditor v5")
-st.caption("15 automated checks · SOX · ISO 27001 · GDPR · PCI-DSS · Workpaper-ready export · 10-minute audit")
+st.set_page_config(
+    page_title="Identity Auditor — IAM Audit Platform",
+    layout="wide",
+    page_icon="🛡️",
+    initial_sidebar_state="expanded",
+)
 
-# ── SIDEBAR ───────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stAppViewContainer"] { background: #0a0e1a; }
+[data-testid="stSidebar"] { background: #0f1525; border-right: 1px solid #1e2d4a; }
+[data-testid="stSidebar"] * { color: #c8d6f0 !important; }
+[data-testid="stSidebar"] .stSelectbox label,
+[data-testid="stSidebar"] .stTextInput label,
+[data-testid="stSidebar"] .stSlider label { color: #7a94c1 !important; font-size:11px !important; text-transform:uppercase; letter-spacing:.06em; }
+[data-testid="stSidebar"] h1,[data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3 { color:#e8f0ff !important; font-size:13px !important; font-weight:600 !important; }
+section.main > div { padding-top: 1rem; }
+.block-container { max-width: 1400px; padding: 0 2rem; }
+h1 { color: #e8f0ff !important; font-size: 26px !important; font-weight: 700 !important; letter-spacing: -0.02em; }
+h2 { color: #c8d6f0 !important; font-size: 16px !important; font-weight: 600 !important; }
+h3 { color: #7a94c1 !important; font-size: 13px !important; font-weight: 500 !important; text-transform: uppercase; letter-spacing: .06em; }
+p, li, .stMarkdown { color: #8a9dc0 !important; }
+.stDataFrame { border: 1px solid #1e2d4a !important; border-radius: 8px !important; }
+.stTabs [data-baseweb="tab-list"] { background: #0f1525; border-bottom: 1px solid #1e2d4a; gap: 0; }
+.stTabs [data-baseweb="tab"] { background: transparent; color: #7a94c1; border: none; padding: 10px 20px; font-size: 13px; font-weight: 500; }
+.stTabs [aria-selected="true"] { background: transparent; color: #4d9fff; border-bottom: 2px solid #4d9fff; }
+.stMetric { background: #0f1525; border: 1px solid #1e2d4a; border-radius: 10px; padding: 14px 18px; }
+.stMetric label { color: #7a94c1 !important; font-size: 11px !important; text-transform: uppercase; letter-spacing: .05em; }
+.stMetric [data-testid="metric-container"] > div:nth-child(2) { color: #e8f0ff !important; font-size: 24px !important; font-weight: 700 !important; }
+.stButton button { border-radius: 6px; font-weight: 600; font-size: 12px; }
+.stFileUploader { background: #0f1525; border: 1px dashed #1e2d4a; border-radius: 10px; padding: 8px; }
+.stFileUploader label { color: #7a94c1 !important; font-size: 12px !important; }
+.stSuccess { background: #0a1f14 !important; border: 1px solid #1a4d2e !important; color: #4dbb7a !important; border-radius: 8px; }
+.stInfo { background: #0a1428 !important; border: 1px solid #1a3a5c !important; color: #4d9fff !important; border-radius: 8px; }
+.stWarning { background: #1f1600 !important; border: 1px solid #4d3800 !important; color: #ffa520 !important; border-radius: 8px; }
+.stError { background: #1f0a0a !important; border: 1px solid #4d1a1a !important; color: #ff6b6b !important; border-radius: 8px; }
+div[data-testid="stExpander"] { background: #0f1525; border: 1px solid #1e2d4a; border-radius: 8px; }
+div[data-testid="stExpander"] summary { color: #7a94c1 !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SIDEBAR
+# ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Audit Settings")
+    st.markdown("### 🛡️ Identity Auditor")
+    st.markdown("---")
 
-    st.subheader("📋 Engagement Details")
+    st.markdown("#### Engagement")
     meta = {
-        "client":   st.text_input("Client organisation",  placeholder="Nairs.com Ltd"),
-        "ref":      st.text_input("Engagement reference", placeholder="IAR-2025-001"),
-        "auditor":  st.text_input("Lead auditor name",    placeholder="Your name"),
-        "standard": st.selectbox("Audit standard", [
-            "ISACA IS Audit Standard","ISO 27001:2022","SOX ITGC",
-            "PCI-DSS v4.0","GDPR Art.32","Internal Audit Charter",
+        "client":   st.text_input("Client",    placeholder="Nairs.com Ltd",  label_visibility="visible"),
+        "ref":      st.text_input("Reference", placeholder="IAR-2025-001",   label_visibility="visible"),
+        "auditor":  st.text_input("Auditor",   placeholder="Your full name", label_visibility="visible"),
+        "standard": st.selectbox("Standard", [
+            "ISO 27001:2022","SOX ITGC","PCI-DSS v4.0","GDPR Art.32",
+            "ISACA IS Audit","Internal Audit Charter",
         ]),
     }
 
-    st.divider()
-    st.subheader("📐 Compliance Frameworks")
+    st.markdown("---")
+    st.markdown("#### Frameworks to cite")
     selected_fw = []
-    if st.checkbox("SOX / ITGC",     value=True):  selected_fw.append("SOX")
-    if st.checkbox("ISO 27001:2022", value=True):  selected_fw.append("ISO")
-    if st.checkbox("GDPR",           value=True):  selected_fw.append("GDPR")
-    if st.checkbox("PCI-DSS v4.0",   value=False): selected_fw.append("PCI-DSS")
+    cols_fw = st.columns(2)
+    if cols_fw[0].checkbox("SOX",      value=True):  selected_fw.append("SOX")
+    if cols_fw[1].checkbox("ISO 27001",value=True):  selected_fw.append("ISO")
+    if cols_fw[0].checkbox("GDPR",     value=True):  selected_fw.append("GDPR")
+    if cols_fw[1].checkbox("PCI-DSS",  value=False): selected_fw.append("PCI-DSS")
 
-    st.divider()
-    st.subheader("📅 Audit Scope Period")
-    st.caption("Pick a preset or enter dates → click GO to lock and scan.")
-
-    # Year selector — most audits review a specific calendar year
-    _yr_options = [today.year - 2, today.year - 1, today.year]
-    _yr_labels  = [str(y) for y in _yr_options]
-    _selected_yr = st.selectbox(
-        "Select audit year",
+    st.markdown("---")
+    st.markdown("#### Audit scope")
+    _yr_options = [today.year-2, today.year-1, today.year]
+    st.selectbox(
+        "Year",
         options=_yr_options,
-        index=1,               # default = previous year
-        format_func=lambda y: f"{y} (previous year)" if y == today.year-1 else (f"{y} (current year)" if y == today.year else str(y)),
+        index=1,
+        format_func=lambda y: f"{y}  ◀ previous" if y==today.year-1 else (f"{y}  ◀ current" if y==today.year else str(y)),
         key="audit_year_sel",
     )
-    def _set_year():
-        y = st.session_state["audit_year_sel"]
-        st.session_state.update(ss_start=date(y,1,1), ss_end=date(y,12,31), locked=False)
+    sb1, sb2 = st.columns(2)
+    sb1.button("Full Year",    use_container_width=True, on_click=_set_year, type="primary")
+    sb2.button("Last Quarter", use_container_width=True, on_click=_last_q)
+    sb1.button("Last 6 Mo.",   use_container_width=True, on_click=_last_6)
+    sb2.button("This Month",   use_container_width=True, on_click=_this_month)
 
-    c1, c2 = st.columns(2)
-    c1.button("Set Full Year",  use_container_width=True, on_click=_set_year, type="primary")
-    c1.button("Last Quarter",   use_container_width=True, on_click=_last_q)
-    c2.button("Last 6 Months",  use_container_width=True, on_click=_last_6)
-    c2.button("This Month",     use_container_width=True, on_click=_this_month)
     st.write("")
-    d1, d2 = st.columns(2)
-    with d1: st.date_input("From", key="ss_start", on_change=_date_chg)
-    with d2: st.date_input("To",   key="ss_end",   on_change=_date_chg)
+    dc1, dc2 = st.columns(2)
+    with dc1: st.date_input("From", key="ss_start", on_change=_date_chg, label_visibility="visible")
+    with dc2: st.date_input("To",   key="ss_end",   on_change=_date_chg, label_visibility="visible")
 
     date_err = st.session_state["ss_start"] >= st.session_state["ss_end"]
-    if date_err: st.error("'From' must be before 'To'.")
+    if date_err: st.error("From must be before To")
 
-    st.button("▶  GO — Lock Scope & Run Audit",
+    st.button("▶  GO — Run Audit",
               use_container_width=True, type="primary",
               disabled=date_err, on_click=_go)
 
@@ -725,277 +760,463 @@ with st.sidebar:
     SCOPE_END   = st.session_state["ss_end"]
     scope_days  = (SCOPE_END - SCOPE_START).days
     if st.session_state["locked"]:
-        st.success(f"🔒 Locked: **{SCOPE_START.strftime('%d %b %Y')}** → **{SCOPE_END.strftime('%d %b %Y')}** ({scope_days} days)")
+        st.success(f"🔒 {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')} ({scope_days}d)")
     else:
-        st.info(f"🗓️ {scope_days} days selected — click GO to run")
+        st.info(f"📅 {scope_days} days — click GO to run")
 
-    st.divider()
-    st.subheader("🔧 Detection Thresholds")
-    DORMANT_DAYS         = st.slider("Dormant threshold (days)",         30, 365, 90)
-    PASSWORD_EXPIRY_DAYS = st.slider("Password expiry threshold (days)", 30, 365, 90)
-    FUZZY_THRESHOLD      = st.slider("Fuzzy email sensitivity",          70, 99,  88,
-                                     help="Lower = catch more near-matches")
-    MAX_SYSTEMS          = st.slider("Max systems per user",              2,  10,   3)
+    st.markdown("---")
+    st.markdown("#### Thresholds")
+    DORMANT_DAYS         = st.slider("Dormant (days)",         30, 365, 90)
+    PASSWORD_EXPIRY_DAYS = st.slider("Password expiry (days)", 30, 365, 90)
+    FUZZY_THRESHOLD      = st.slider("Fuzzy match %",          70, 99,  88)
+    MAX_SYSTEMS          = st.slider("Max systems per user",    2,  10,   3)
 
-    st.divider()
-    with st.expander("📌 Required column names"):
+    st.markdown("---")
+    with st.expander("Column reference"):
         st.markdown("""
-**HR Master** *(required)*
-`Email` · `FullName` · `Department`
+**HR Master** (required)
+`Email` `FullName` `Department`
 
-**HR Master** *(recommended)*
-`EmploymentStatus` · `ContractType` · `TerminationDate` · `JobTitle`
+**HR Master** (recommended)
+`EmploymentStatus` `ContractType` `TerminationDate`
 
-**System Access** *(required)*
-`Email` · `AccessLevel`
+**System Access** (required)
+`Email` `AccessLevel`
 
-**System Access** *(recommended)*
-`FullName` · `LastLoginDate` · `PasswordLastSet`
-`AccountCreatedDate` · `MFA` · `SystemName`
+**System Access** (recommended)
+`FullName` `LastLoginDate` `PasswordLastSet` `AccountCreatedDate` `MFA` `SystemName`
         """)
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
-f1, f2 = st.columns(2)
-with f1: hr_file  = st.file_uploader("📁 HR Master (.xlsx)",      type=["xlsx"])
-with f2: sys_file = st.file_uploader("📁 System Access (.xlsx)",  type=["xlsx"])
+# ─────────────────────────────────────────────────────────────────────────────
+#  HEADER
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("""
+<div style="display:flex;align-items:center;gap:16px;padding:20px 0 8px;border-bottom:1px solid #1e2d4a;margin-bottom:24px">
+  <div style="width:44px;height:44px;background:linear-gradient(135deg,#1a3a6e,#0d2040);border:1px solid #2a4a8e;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px">🛡️</div>
+  <div>
+    <div style="font-size:22px;font-weight:700;color:#e8f0ff;letter-spacing:-0.02em">Identity & Access Management Auditor</div>
+    <div style="font-size:12px;color:#7a94c1;margin-top:2px">15 automated checks · ISO 27001 · SOX · GDPR · PCI-DSS · Workpaper-ready output</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  FILE UPLOAD — 3 boxes
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("### Upload files")
+up1, up2, up3 = st.columns(3)
+
+with up1:
+    st.markdown('<div style="font-size:11px;color:#7a94c1;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">① HR Master</div>', unsafe_allow_html=True)
+    hr_file = st.file_uploader("HR Master", type=["xlsx","xls","csv"],
+                                label_visibility="collapsed", key="hr_upload")
+    if hr_file:
+        st.markdown(f'<div style="font-size:11px;color:#4dbb7a">✓ {hr_file.name}</div>', unsafe_allow_html=True)
+
+with up2:
+    st.markdown('<div style="font-size:11px;color:#7a94c1;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">② System Access List</div>', unsafe_allow_html=True)
+    sys_file = st.file_uploader("System Access", type=["xlsx","xls","csv"],
+                                 label_visibility="collapsed", key="sys_upload")
+    if sys_file:
+        st.markdown(f'<div style="font-size:11px;color:#4dbb7a">✓ {sys_file.name}</div>', unsafe_allow_html=True)
+
+with up3:
+    st.markdown('<div style="font-size:11px;color:#7a94c1;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">③ Audit Standard / Policy (optional)</div>', unsafe_allow_html=True)
+    std_file = st.file_uploader("Standard", type=["pdf","txt","docx"],
+                                 label_visibility="collapsed", key="std_upload")
+    if std_file:
+        st.markdown(f'<div style="font-size:11px;color:#4dbb7a">✓ {std_file.name}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="font-size:11px;color:#4a5a7a">Upload your ISO 27001 SOA, access control policy or audit standard. Findings will cite it directly.</div>', unsafe_allow_html=True)
+
+# Parse standard document if uploaded
+std_context = ""
+if std_file is not None:
+    try:
+        if std_file.type == "text/plain":
+            std_context = std_file.read().decode("utf-8", errors="ignore")[:3000]
+        elif std_file.name.endswith(".pdf"):
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(std_file)
+                std_context = " ".join(p.extract_text() or "" for p in reader.pages[:8])[:3000]
+            except Exception:
+                std_context = "[PDF uploaded — pypdf not available. Install pypdf to extract text.]"
+        elif std_file.name.endswith(".docx"):
+            try:
+                import docx
+                doc = docx.Document(std_file)
+                std_context = " ".join(p.text for p in doc.paragraphs)[:3000]
+            except Exception:
+                std_context = "[DOCX uploaded — python-docx not available.]"
+        if std_context:
+            st.success(f"📄 Standard document parsed — {len(std_context):,} characters extracted. Findings will reference this document.")
+    except Exception as e:
+        st.warning(f"Could not parse standard document: {e}")
+
+st.markdown("---")
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  MAIN AUDIT FLOW
+# ─────────────────────────────────────────────────────────────────────────────
 if hr_file and sys_file:
-    hr_df  = pd.read_excel(hr_file)
-    sys_df = pd.read_excel(sys_file)
+    # Read files
+    def read_file(f):
+        if f.name.endswith(".csv"):
+            return pd.read_csv(f)
+        return pd.read_excel(f)
+
+    hr_df  = read_file(hr_file)
+    sys_df = read_file(sys_file)
 
     # Column validation
     hr_miss  = {"Email","FullName","Department"} - set(hr_df.columns)
     sys_miss = {"Email","AccessLevel"}           - set(sys_df.columns)
     if hr_miss or sys_miss:
-        if hr_miss:  st.error(f"❌ HR file missing: {hr_miss}")
-        if sys_miss: st.error(f"❌ System Access file missing: {sys_miss}")
+        col_e1, col_e2 = st.columns(2)
+        if hr_miss:  col_e1.error(f"HR file missing columns: {hr_miss}")
+        if sys_miss: col_e2.error(f"System Access file missing columns: {sys_miss}")
+        st.markdown("""
+**Column names must match exactly.** Check your file has these exact headers:
+
+| File | Required columns |
+|---|---|
+| HR Master | `Email` · `FullName` · `Department` |
+| System Access | `Email` · `AccessLevel` |
+        """)
         st.stop()
 
-    # ── Population completeness gate ─────────────────────────────────────────
-    if not st.session_state.get("confirmed", False):
-        st.warning("⚠️ **Step 1 — Confirm population completeness before scanning**")
-        st.markdown(f"""
-| File | Rows uploaded |
-|---|---|
-| HR Master | **{len(hr_df):,}** |
-| System Access | **{len(sys_df):,}** |
+    # Department filter — new feature
+    all_depts = sorted(set(
+        list(hr_df["Department"].dropna().unique()) +
+        (list(sys_df["Department"].dropna().unique()) if "Department" in sys_df.columns else [])
+    ))
+    st.markdown("### Scope filter")
+    sc1, sc2 = st.columns([3,1])
+    with sc1:
+        selected_depts = st.multiselect(
+            "Filter by department (leave empty to scan ALL departments)",
+            options=all_depts,
+            default=[],
+            placeholder="All departments",
+            help="Select specific departments to narrow audit scope — e.g. Finance, IT only"
+        )
+    with sc2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if selected_depts:
+            st.info(f"Scanning {len(selected_depts)} dept(s)")
+        else:
+            st.info("Scanning all depts")
 
-**Please confirm:**
-- HR extract covers 100% of employees in scope (not pre-filtered by client)
-- System access file covers 100% of accounts (not a sample)
-- You have documented the source and extraction date in your workpapers
+    # Apply department filter
+    if selected_depts:
+        hr_df_filtered  = hr_df[hr_df["Department"].isin(selected_depts)]
+        sys_df_filtered = sys_df[sys_df["Department"].isin(selected_depts)] if "Department" in sys_df.columns else sys_df
+    else:
+        hr_df_filtered  = hr_df
+        sys_df_filtered = sys_df
+
+    st.markdown("---")
+
+    # Population completeness gate
+    if not st.session_state.get("confirmed", False):
+        st.markdown("### ⚠️ Step 1 — Confirm data completeness")
+        g1, g2, g3 = st.columns(3)
+        g1.metric("HR Master rows",      f"{len(hr_df_filtered):,}")
+        g2.metric("System Access rows",  f"{len(sys_df_filtered):,}")
+        g3.metric("Departments in scope", len(selected_depts) if selected_depts else len(all_depts))
+
+        st.markdown("""
+Before the scan runs, confirm the data you uploaded is the **full unfiltered population** — not a sample or pre-filtered extract provided by the client.
+This confirmation is part of your audit workpaper evidence.
         """)
-        if st.button("✅ Confirmed — data is complete, proceed to scope selection",
+        if st.button("✅  I confirm — this is the complete, unfiltered population. Proceed to scope selection.",
                      type="primary", use_container_width=True):
             st.session_state["confirmed"] = True
             st.rerun()
-        st.caption("Once confirmed, set your audit scope dates in the sidebar and click GO.")
         st.stop()
 
-    # ── Scope lock gate ──────────────────────────────────────────────────────
+    # Scope lock gate
     if not st.session_state.get("locked", False):
-        st.info("📅 Files confirmed. Set your **audit scope dates** in the sidebar and click **▶ GO**.")
+        st.markdown("### Step 2 — Set scope and run")
+        sl1, sl2, sl3 = st.columns(3)
+        sl1.metric("Data confirmed",   f"{len(hr_df_filtered):,} HR rows")
+        sl2.metric("System accounts",  f"{len(sys_df_filtered):,} rows")
+        sl3.metric("Scope selected",   f"{SCOPE_START.year}" if SCOPE_START.year == SCOPE_END.year else f"{SCOPE_START.year}–{SCOPE_END.year}")
+        st.info(f"📅 Scope set to {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')} ({scope_days} days). Click **▶ GO — Run Audit** in the sidebar to start.")
         st.stop()
 
-    # ── Run audit ─────────────────────────────────────────────────────────────
-    with st.spinner("🔍 Running 15 checks..."):
+    # Run audit
+    with st.spinner("🔍 Running 15 checks across all identities..."):
         findings_df, excluded_count = run_audit(
-            hr_df, sys_df,
+            hr_df_filtered, sys_df_filtered,
             SCOPE_START, SCOPE_END,
             DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
             FUZZY_THRESHOLD, MAX_SYSTEMS,
             selected_fw,
         )
 
-    in_scope_n = len(sys_df) - excluded_count
-    st.success(
-        f"🔒 Scope: **{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}** "
-        f"| **{in_scope_n:,}** of {len(sys_df):,} accounts scanned "
-        f"| {excluded_count:,} excluded"
-    )
+    in_scope_n = len(sys_df_filtered) - excluded_count
+    total      = len(findings_df)
 
-    # ── Debug panel — remove before production ───────────────────────────────
-    with st.expander("🔧 Diagnostic info (click to expand if no findings appear)"):
-        st.markdown(f"""
-| Check | Result |
-|---|---|
-| HR rows loaded | `{len(hr_df)}` |
-| System rows loaded | `{len(sys_df)}` |
-| HR Email column exists | `{"Email" in hr_df.columns}` |
-| HR EmploymentStatus exists | `{"EmploymentStatus" in hr_df.columns}` |
-| Sys Email column exists | `{"Email" in sys_df.columns}` |
-| Sys AccessLevel exists | `{"AccessLevel" in sys_df.columns}` |
-| Sys MFA column exists | `{"MFA" in sys_df.columns}` |
-| Sys LastLoginDate exists | `{"LastLoginDate" in sys_df.columns}` |
-| Accounts excluded by scope | `{excluded_count}` |
-| Accounts in scope | `{in_scope_n}` |
-| Raw findings count | `{len(findings_df)}` |
-| Scope start | `{SCOPE_START}` |
-| Scope end | `{SCOPE_END}` |
-| HR EmploymentStatus values | `{hr_df["EmploymentStatus"].value_counts().to_dict() if "EmploymentStatus" in hr_df.columns else "MISSING"}` |
-| Sys MFA values | `{sys_df["MFA"].value_counts().to_dict() if "MFA" in sys_df.columns else "MISSING"}` |
-| Sample HR emails | `{list(hr_df["Email"].str.lower().head(3))}` |
-| Sample Sys emails | `{list(sys_df["Email"].str.lower().head(3))}` |
-| HR emails matching Sys | `{len(set(hr_df["Email"].str.lower()) & set(sys_df["Email"].str.lower()))}` |
-| Sys emails NOT in HR | `{len(set(sys_df["Email"].str.lower()) - set(hr_df["Email"].str.lower()))}` |
-        """)
+    # ── SCOPE BANNER ─────────────────────────────────────────────────────────
+    dept_label = f"{len(selected_depts)} departments" if selected_depts else "all departments"
+    st.markdown(f"""
+<div style="background:#0a1f14;border:1px solid #1a4d2e;border-radius:8px;padding:12px 18px;margin-bottom:20px;display:flex;gap:40px;flex-wrap:wrap">
+  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Scope locked</span><br><span style="color:#e8f0ff;font-weight:600">{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}</span></div>
+  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Scanned</span><br><span style="color:#e8f0ff;font-weight:600">{in_scope_n:,} of {len(sys_df_filtered):,} accounts</span></div>
+  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Departments</span><br><span style="color:#e8f0ff;font-weight:600">{dept_label}</span></div>
+  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Standard</span><br><span style="color:#e8f0ff;font-weight:600">{meta.get("standard","—")}</span></div>
+  <div><span style="font-size:11px;color:#4dbb7a;text-transform:uppercase;letter-spacing:.06em">Excluded</span><br><span style="color:#8a9dc0;font-weight:600">{excluded_count:,} out of scope</span></div>
+</div>
+""", unsafe_allow_html=True)
 
-
-    # ── Metrics ───────────────────────────────────────────────────────────────
-    st.header("📊 Audit Summary")
-    total = len(findings_df)
+    # ── METRIC CARDS ──────────────────────────────────────────────────────────
+    st.markdown("### Audit results")
     def cnt(col, val): return len(findings_df[findings_df[col]==val]) if total else 0
 
-    m = st.columns(5)
-    m[0].metric("Total Findings",  total)
-    m[1].metric("🔴 Critical",      cnt("Severity","🔴 CRITICAL"))
-    m[2].metric("🟠 High",          cnt("Severity","🟠 HIGH"))
-    m[3].metric("🟡 Medium",        cnt("Severity","🟡 MEDIUM"))
-    m[4].metric("Accounts Scanned", f"{in_scope_n:,}")
+    mc = st.columns(5)
+    mc[0].metric("Total Findings",  total,
+                 delta=None, delta_color="off")
+    mc[1].metric("🔴 Critical",
+                 cnt("Severity","🔴 CRITICAL"),
+                 help="Disable / escalate within 24 hours")
+    mc[2].metric("🟠 High",
+                 cnt("Severity","🟠 HIGH"),
+                 help="Resolve within 5 business days")
+    mc[3].metric("🟡 Medium",
+                 cnt("Severity","🟡 MEDIUM"),
+                 help="Resolve within 10 business days")
+    mc[4].metric("Accounts Scanned", f"{in_scope_n:,}")
 
     if total:
-        st.divider()
+        st.markdown("<br>", unsafe_allow_html=True)
         cc = st.columns(5)
         checks_list = [
-            ("Orphaned",           "Orphaned Account"),
-            ("Terminated Active",  "Terminated Employee with Active Account"),
-            ("Post-Term Login",    "Post-Termination Login"),
-            ("Dormant",            "Dormant Account"),
-            ("SoD Violations",     "Toxic Access (SoD Violation)"),
-            ("Privilege Creep",    "Privilege Creep"),
-            ("Shared IDs",         "Shared / Generic Account"),
-            ("Service Accounts",   "Service / System Account"),
-            ("Admin Outside IT",   "Super-User / Admin Access"),
-            ("MFA Not Enabled",    "MFA Not Enabled"),
-            ("Pwd Expired",        "Password Never Expired"),
-            ("Duplicates",         "Duplicate System Access"),
-            ("Multi-System",       "Excessive Multi-System Access"),
-            ("Contractors",        "Contractor Without Expiry Date"),
-            ("Near-Match",         "Near-Match Email"),
+            ("Orphaned",          "Orphaned Account"),
+            ("Terminated Active", "Terminated Employee with Active Account"),
+            ("Post-Term Login",   "Post-Termination Login"),
+            ("Dormant",           "Dormant Account"),
+            ("SoD Violations",    "Toxic Access (SoD Violation)"),
+            ("Privilege Creep",   "Privilege Creep"),
+            ("Generic IDs",       "Shared / Generic Account"),
+            ("Service Accts",     "Service / System Account"),
+            ("Admin Outside IT",  "Super-User / Admin Access"),
+            ("MFA Disabled",      "MFA Not Enabled"),
+            ("Pwd Expired",       "Password Never Expired"),
+            ("Duplicates",        "Duplicate System Access"),
+            ("Multi-System",      "Excessive Multi-System Access"),
+            ("No Expiry",         "Contractor Without Expiry Date"),
+            ("Near-Match",        "Near-Match Email"),
         ]
         for i, (lbl, itype) in enumerate(checks_list):
-            cc[i % 5].metric(lbl, cnt("IssueType", itype))
+            n = cnt("IssueType", itype)
+            cc[i % 5].metric(lbl, n)
+
+    st.markdown("---")
 
     if not total:
         st.success(
-            f"✅ Audit complete — no issues found across all 15 checks "
-            f"for {in_scope_n:,} accounts scanned. "
+            f"✅ Audit complete — no issues found for {in_scope_n:,} accounts scanned. "
             f"Scope: {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}"
         )
-        st.info("If you expected findings, check: (1) date scope covers your data period, "
-                "(2) column names match exactly — Email, AccessLevel, FullName, "
-                "(3) HR file has EmploymentStatus and TerminationDate columns.")
-    else:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "🔎 Findings", "🛠️ Remediation", "⚖️ Frameworks", "📈 Analysis", "✍️ Opinion"
-        ])
+        if excluded_count == len(sys_df_filtered):
+            st.error(
+                f"⚠️ All {len(sys_df_filtered):,} accounts were excluded by the scope filter. "
+                f"Your data dates do not fall within {SCOPE_START.year}. "
+                f"Check the year selector in the sidebar — it is currently set to {SCOPE_START.year}."
+            )
+        st.stop()
 
-        sdf = findings_df.copy()
-        sdf["_o"] = sdf["Severity"].map(sev_order).fillna(9)
-        sdf = sdf.sort_values("_o").drop(columns="_o")
+    # ── TABS ─────────────────────────────────────────────────────────────────
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🔎  All Findings",
+        "🛠️  Remediation",
+        "⚖️  Frameworks",
+        "📈  Analysis",
+        "✍️  Audit Opinion",
+    ])
 
-        with tab1:
-            ft = st.multiselect("Filter by issue type:",
-                                options=sorted(findings_df["IssueType"].unique()),
-                                default=sorted(findings_df["IssueType"].unique()))
-            filtered = sdf[sdf["IssueType"].isin(ft)]
-            disp = [c for c in ["Severity","IssueType","Email","FullName",
-                                  "Department","AccessLevel","DaysInactive",
-                                  "DaysPostTermination","Detail"] if c in filtered.columns]
-            st.dataframe(filtered[disp], use_container_width=True, hide_index=True,
-                column_config={
-                    "Severity":            st.column_config.TextColumn("Severity",       width="small"),
-                    "IssueType":           st.column_config.TextColumn("Issue Type",     width="medium"),
-                    "Detail":              st.column_config.TextColumn("Detail",          width="large"),
-                    "DaysInactive":        st.column_config.NumberColumn("Days Idle",     width="small"),
-                    "DaysPostTermination": st.column_config.NumberColumn("Days Post-Term",width="small"),
-                })
+    sdf = findings_df.copy()
+    sdf["_o"] = sdf["Severity"].map(sev_order).fillna(9)
+    sdf = sdf.sort_values("_o").drop(columns="_o")
 
-        with tab2:
-            st.caption("4-step remediation plan, owner and SLA per finding.")
-            for _, row in sdf.iterrows():
-                with st.expander(f"{row.get('Severity','')}  |  {row.get('IssueType','')}  —  {row.get('Email','')}"):
+    with tab1:
+        f_col1, f_col2 = st.columns([3,1])
+        with f_col1:
+            ft = st.multiselect(
+                "Filter by issue type",
+                options=sorted(findings_df["IssueType"].unique()),
+                default=sorted(findings_df["IssueType"].unique()),
+                label_visibility="visible",
+            )
+        with f_col2:
+            sev_filter = st.selectbox(
+                "Severity",
+                options=["All","🔴 CRITICAL","🟠 HIGH","🟡 MEDIUM"],
+                label_visibility="visible",
+            )
+        filtered = sdf[sdf["IssueType"].isin(ft)]
+        if sev_filter != "All":
+            filtered = filtered[filtered["Severity"] == sev_filter]
+
+        disp = [c for c in ["Severity","IssueType","Email","FullName",
+                              "Department","AccessLevel","DaysInactive",
+                              "DaysPostTermination","Detail"] if c in filtered.columns]
+        st.dataframe(
+            filtered[disp],
+            use_container_width=True,
+            hide_index=True,
+            height=420,
+            column_config={
+                "Severity":            st.column_config.TextColumn("Severity",        width="small"),
+                "IssueType":           st.column_config.TextColumn("Issue Type",      width="medium"),
+                "Email":               st.column_config.TextColumn("Email",           width="medium"),
+                "FullName":            st.column_config.TextColumn("Name",            width="medium"),
+                "Department":          st.column_config.TextColumn("Dept",            width="small"),
+                "AccessLevel":         st.column_config.TextColumn("Access Level",    width="small"),
+                "Detail":              st.column_config.TextColumn("Detail",          width="large"),
+                "DaysInactive":        st.column_config.NumberColumn("Days Idle",     width="small"),
+                "DaysPostTermination": st.column_config.NumberColumn("Post-Term Days",width="small"),
+            },
+        )
+        st.caption(f"Showing {len(filtered):,} of {total:,} findings")
+
+    with tab2:
+        st.caption("Every finding has a 4-step action plan, named owner and SLA. Expand each row.")
+        sev_options = ["All severities"] + sorted(sdf["Severity"].unique().tolist(), key=sev_order)
+        rem_sev = st.selectbox("Show severity", sev_options, label_visibility="visible", key="rem_sev_filter")
+        rem_df = sdf if rem_sev == "All severities" else sdf[sdf["Severity"] == rem_sev]
+        for _, row in rem_df.iterrows():
+            sev_icon = "🔴" if "CRITICAL" in str(row.get("Severity","")) else ("🟠" if "HIGH" in str(row.get("Severity","")) else "🟡")
+            with st.expander(
+                f"{sev_icon}  {row.get('IssueType','')}  —  {row.get('Email','')}  |  {row.get('Department','')}",
+                expanded=False,
+            ):
+                d1, d2 = st.columns([2,1])
+                with d1:
                     st.markdown(f"**Finding:** {row.get('Detail','')}")
                     st.markdown(f"**Risk:** {row.get('Risk','')}")
-                    st.divider()
-                    c1, c2 = st.columns(2)
-                    c1.markdown(f"**Step 1:** {row.get('Step 1 – Action','')}")
-                    c1.markdown(f"**Step 2:** {row.get('Step 2 – Action','')}")
-                    c2.markdown(f"**Step 3:** {row.get('Step 3 – Action','')}")
-                    c2.markdown(f"**Step 4:** {row.get('Step 4 – Action','')}")
-                    st.divider()
-                    r1, r2 = st.columns(2)
-                    r1.markdown(f"**Owner:** {row.get('Owner','')}")
-                    r2.markdown(f"**SLA:** {row.get('SLA','')}")
+                with d2:
+                    st.markdown(f"**Owner:** `{row.get('Owner','')}`")
+                    st.markdown(f"**SLA:** `{row.get('SLA','')}`")
+                st.divider()
+                a1, a2 = st.columns(2)
+                a1.markdown(f"**① {row.get('Step 1 – Action','')}**")
+                a1.markdown(f"② {row.get('Step 2 – Action','')}")
+                a2.markdown(f"**③ {row.get('Step 3 – Action','')}**")
+                a2.markdown(f"④ {row.get('Step 4 – Action','')}")
 
-        with tab3:
-            fw_cols = [c for c in ["Severity","IssueType","Email","FullName",
-                                    "SOX Reference","ISO 27001 Ref",
-                                    "GDPR Reference","PCI-DSS Reference"] if c in sdf.columns]
-            st.dataframe(sdf[fw_cols], use_container_width=True, hide_index=True)
+    with tab3:
+        if std_context:
+            st.info(f"📄 Standard document uploaded: **{std_file.name}** — findings reference this document in addition to hardcoded framework mappings.")
+        fw_cols = [c for c in ["Severity","IssueType","Email","FullName","Department",
+                                "SOX Reference","ISO 27001 Ref",
+                                "GDPR Reference","PCI-DSS Reference"] if c in sdf.columns]
+        st.dataframe(sdf[fw_cols], use_container_width=True, hide_index=True, height=420)
 
-        with tab4:
-            a1, a2 = st.columns(2)
-            with a1:
-                st.markdown("**By severity**")
-                bsev = findings_df["Severity"].value_counts().reset_index()
-                bsev.columns = ["Severity","Count"]
-                st.dataframe(bsev, use_container_width=True, hide_index=True)
-                st.markdown("**By issue type**")
-                btyp = findings_df["IssueType"].value_counts().reset_index()
-                btyp.columns = ["Issue Type","Count"]
-                st.dataframe(btyp, use_container_width=True, hide_index=True)
-            with a2:
-                if "Department" in findings_df.columns:
-                    st.markdown("**By department**")
-                    bdept = findings_df["Department"].value_counts().reset_index()
-                    bdept.columns = ["Department","Count"]
-                    st.dataframe(bdept, use_container_width=True, hide_index=True)
-                idle = findings_df[findings_df.get("DaysInactive", pd.Series()).notna()] if "DaysInactive" in findings_df.columns else pd.DataFrame()
-                if not idle.empty:
-                    st.markdown("**Inactivity distribution**")
-                    st.bar_chart(idle.set_index("Email")["DaysInactive"])
+    with tab4:
+        an1, an2, an3 = st.columns(3)
+        with an1:
+            st.markdown("**By severity**")
+            bsev = findings_df["Severity"].value_counts().reset_index()
+            bsev.columns = ["Severity","Count"]
+            st.dataframe(bsev, use_container_width=True, hide_index=True)
+        with an2:
+            st.markdown("**By issue type**")
+            btyp = findings_df["IssueType"].value_counts().reset_index()
+            btyp.columns = ["Issue Type","Count"]
+            st.dataframe(btyp, use_container_width=True, hide_index=True)
+        with an3:
+            if "Department" in findings_df.columns:
+                st.markdown("**By department**")
+                bdept = findings_df["Department"].value_counts().reset_index()
+                bdept.columns = ["Department","Count"]
+                st.dataframe(bdept, use_container_width=True, hide_index=True)
 
-        with tab5:
-            opinion = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df), in_scope_n)
-            st.markdown("**Auto-generated audit opinion — review and edit before use.**")
-            edited_opinion = st.text_area("Audit opinion (editable):", value=opinion, height=420)
-            st.caption("This draft must be reviewed and signed off by the responsible auditor before formal use.")
+        if "DaysInactive" in findings_df.columns:
+            dormant_data = findings_df[findings_df["DaysInactive"].notna() & (findings_df["IssueType"]=="Dormant Account")]
+            if not dormant_data.empty:
+                st.markdown("**Dormant account inactivity (days)**")
+                st.bar_chart(dormant_data.set_index("Email")["DaysInactive"])
 
-    # ── Export ────────────────────────────────────────────────────────────────
-    st.divider()
-    opinion_for_export = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df), in_scope_n) if total else "No findings — clean opinion."
-    ref_slug = (meta.get("ref") or "Audit").replace(" ", "_")
-    st.download_button(
-        label="📥 Download Workpaper-Ready Audit Report (.xlsx)",
-        data=to_excel_bytes(findings_df, hr_df, sys_df, SCOPE_START, SCOPE_END,
-                            excluded_count, meta, opinion_for_export),
-        file_name=f"IAR_{ref_slug}_{datetime.today().strftime('%Y%m%d')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        type="primary", use_container_width=True,
-    )
+    with tab5:
+        opinion = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_filtered), in_scope_n)
+        st.markdown("**Auto-generated audit opinion — review and edit before signing off.**")
+        if std_context:
+            st.caption(f"Note: You uploaded '{std_file.name}'. Reference this document explicitly in your final opinion where indicated.")
+        edited_opinion = st.text_area("Draft opinion:", value=opinion, height=440, label_visibility="collapsed")
+        st.caption("This draft is generated from finding counts and severity. It must be reviewed and approved by the responsible auditor before any formal use.")
+
+    # ── EXPORT ───────────────────────────────────────────────────────────────
+    st.markdown("---")
+    exp1, exp2 = st.columns([3,1])
+    with exp1:
+        opinion_for_export = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_filtered), in_scope_n)
+        ref_slug = (meta.get("ref") or "Audit").replace(" ","_").replace("/","-")
+        st.download_button(
+            label="📥  Download Workpaper-Ready Audit Report (.xlsx)",
+            data=to_excel_bytes(
+                findings_df, hr_df_filtered, sys_df_filtered,
+                SCOPE_START, SCOPE_END, excluded_count,
+                meta, opinion_for_export,
+            ),
+            file_name=f"IAR_{ref_slug}_{datetime.today().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True,
+        )
+    with exp2:
+        st.metric("Report sheets", "8+")
 
 elif hr_file or sys_file:
-    st.info("📂 Upload both files to continue.")
+    st.info("📂 Upload both HR Master and System Access files to continue.")
+
 else:
-    st.info("👆 Upload both files above to begin.")
-    with st.expander("📋 15 automated checks", expanded=True):
-        for sev, name, desc in [
-            ("🔴","Orphaned accounts",             "Email in system, no HR record — leavers, ghosts, contractors"),
-            ("🔴","Terminated with active access", "HR shows resigned/terminated but account still enabled"),
-            ("🔴","Post-termination login",        "Ex-employee logged in AFTER their termination date"),
-            ("🔴","Toxic access — SoD violation",  "User can initiate AND approve — fraud goes undetected"),
-            ("🟠","Dormant accounts",              "No login in 90+ days — idle accounts are prime targets"),
-            ("🟠","Privilege creep",               "4+ roles accumulated from transfers — violates least-privilege"),
-            ("🟠","Shared / generic accounts",     "admin@, test@, helpdesk@ — no audit trail"),
-            ("🟠","Super-user outside IT",         "Admin rights held by non-IT business users"),
-            ("🟠","MFA not enabled",               "No second factor — one password = full access"),
-            ("🟠","Contractor without expiry",     "Contractor account with no end-date set"),
-            ("🟡","Service accounts",              "svc_, batch_, system_ — no named human owner"),
-            ("🟡","Password never expired",        "Credentials older than policy — breach vector"),
-            ("🟡","Duplicate system accounts",     "Same email, multiple account IDs"),
-            ("🟡","Excessive multi-system access", "More systems than role justifies"),
-            ("🟡","Near-match emails",             "Fuzzy match — typos, aliases, impersonation"),
-        ]:
-            st.markdown(f"{sev} **{name}** — {desc}")
+    # Landing page
+    st.markdown("### How it works")
+    lp1, lp2, lp3, lp4 = st.columns(4)
+    for col, num, title, desc in [
+        (lp1,"①","Upload files","HR Master + System Access list. Optionally add your audit standard."),
+        (lp2,"②","Confirm data","Confirm the extract is complete — this becomes part of your workpaper evidence."),
+        (lp3,"③","Set scope & GO","Select the audit year or custom date range. Click GO to lock and scan."),
+        (lp4,"④","Download report","Get a workpaper-ready Excel with findings, remediation, framework refs and audit opinion."),
+    ]:
+        col.markdown(f"""
+<div style="background:#0f1525;border:1px solid #1e2d4a;border-radius:10px;padding:16px">
+  <div style="font-size:20px;font-weight:700;color:#4d9fff;margin-bottom:6px">{num}</div>
+  <div style="font-size:13px;font-weight:600;color:#c8d6f0;margin-bottom:4px">{title}</div>
+  <div style="font-size:12px;color:#7a94c1;line-height:1.5">{desc}</div>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### 15 automated checks")
+    ch1, ch2, ch3 = st.columns(3)
+    checks_display = [
+        ("🔴","Orphaned accounts",            "Email in system, no HR record"),
+        ("🔴","Terminated with active access", "HR shows leaver, account still on"),
+        ("🔴","Post-termination login",        "Logged in after leaving — breach risk"),
+        ("🔴","SoD violations",               "Can initiate AND approve transactions"),
+        ("🟠","Dormant accounts",             "No login in 90+ days"),
+        ("🟠","Privilege creep",              "4+ roles accumulated across transfers"),
+        ("🟠","Generic/shared accounts",      "admin@, helpdesk@ — no audit trail"),
+        ("🟠","Super-user outside IT",        "Admin rights for non-IT business users"),
+        ("🟠","MFA not enabled",              "Single password = full account access"),
+        ("🟠","Contractor without expiry",    "No end-date — access persists forever"),
+        ("🟡","Service accounts",            "svc_, batch_ — no named owner"),
+        ("🟡","Password never expired",      "Stale credentials — breach vector"),
+        ("🟡","Duplicate accounts",          "Same person, multiple IDs"),
+        ("🟡","Excessive system access",     "More systems than role justifies"),
+        ("🟡","Near-match emails",           "Typos, aliases, impersonation"),
+    ]
+    for i, (sev, name, desc) in enumerate(checks_display):
+        col = [ch1,ch2,ch3][i%3]
+        col.markdown(f"""
+<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #1e2d4a">
+  <span style="font-size:14px;flex-shrink:0">{sev}</span>
+  <div>
+    <div style="font-size:12px;font-weight:600;color:#c8d6f0">{name}</div>
+    <div style="font-size:11px;color:#7a94c1">{desc}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
 
