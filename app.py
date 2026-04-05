@@ -625,7 +625,6 @@ with st.sidebar:
         picked_start = st.date_input(
             "From",
             value=default_start,
-            max_value=today,
             help="Start of audit scope",
             key="date_from",
         )
@@ -634,13 +633,12 @@ with st.sidebar:
             "To",
             value=default_end,
             min_value=picked_start,
-            max_value=today,
-            help="End of audit scope — typically last day of review period",
+            help="End of audit scope — can be a future date for full-year scopes",
             key="date_to",
         )
 
     # Validation
-    date_error = picked_start >= picked_end
+    date_error = picked_start >= picked_end  # only block if dates are invalid
     if date_error:
         st.error("⚠️ 'From' date must be before 'To' date.")
 
