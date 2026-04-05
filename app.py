@@ -643,15 +643,15 @@ if "ss_end"    not in st.session_state: st.session_state["ss_end"]    = date(tod
 if "locked"    not in st.session_state: st.session_state["locked"]    = False
 if "confirmed" not in st.session_state: st.session_state["confirmed"] = False
 
-def _this_month():  st.session_state.update(ss_start=today.replace(day=1), ss_end=today, locked=False, confirmed=False)
+def _this_month():  st.session_state.update(ss_start=today.replace(day=1), ss_end=today, locked=False)
 def _last_q():
     q=( today.month-1)//3; me=[31,28,31,30,31,30,31,31,30,31,30,31]
     if q==0: qs,qe=date(today.year-1,10,1),date(today.year-1,12,31)
     else:    qs,qe=date(today.year,(q-1)*3+1,1),date(today.year,q*3,me[q*3-1])
-    st.session_state.update(ss_start=qs,ss_end=qe,locked=False,confirmed=False)
-def _last_6():  st.session_state.update(ss_start=today-timedelta(days=182), ss_end=today, locked=False, confirmed=False)
-def _full_yr(): st.session_state.update(ss_start=date(today.year,1,1), ss_end=date(today.year,12,31), locked=False, confirmed=False)
-def _date_chg():st.session_state.update(locked=False, confirmed=False)
+    st.session_state.update(ss_start=qs,ss_end=qe,locked=False)
+def _last_6():  st.session_state.update(ss_start=today-timedelta(days=182), ss_end=today, locked=False)
+def _full_yr(): st.session_state.update(ss_start=date(today.year,1,1), ss_end=date(today.year,12,31), locked=False)
+def _date_chg():st.session_state.update(locked=False)  # dates changed — re-run needed but data still confirmed
 def _go():      st.session_state["locked"] = True
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -763,20 +763,16 @@ if hr_file and sys_file:
 | HR Master | **{len(hr_df):,}** |
 | System Access | **{len(sys_df):,}** |
 
-**Confirm before proceeding:**
-- This HR extract covers 100% of employees in scope — not pre-filtered by the client
-- This system access file covers 100% of accounts — not a sample
+**Please confirm:**
+- HR extract covers 100% of employees in scope (not pre-filtered by client)
+- System access file covers 100% of accounts (not a sample)
 - You have documented the source and extraction date in your workpapers
         """)
-        ca, cb = st.columns(2)
-        with ca:
-            if st.button("✅ Confirmed — data is complete and unfiltered", type="primary", use_container_width=True):
-                st.session_state["confirmed"] = True
-                st.rerun()
-        with cb:
-            if st.button("❌ Data may be incomplete — halt", use_container_width=True):
-                st.error("Audit halted. Obtain the complete population before proceeding.")
-                st.stop()
+        if st.button("✅ Confirmed — data is complete, proceed to scope selection",
+                     type="primary", use_container_width=True):
+            st.session_state["confirmed"] = True
+            st.rerun()
+        st.caption("Once confirmed, set your audit scope dates in the sidebar and click GO.")
         st.stop()
 
     # ── Scope lock gate ──────────────────────────────────────────────────────
@@ -837,7 +833,14 @@ if hr_file and sys_file:
             cc[i % 5].metric(lbl, cnt("IssueType", itype))
 
     if not total:
-        st.success("✅ No issues found across all 15 checks.")
+        st.success(
+            f"✅ Audit complete — no issues found across all 15 checks "
+            f"for {in_scope_n:,} accounts scanned. "
+            f"Scope: {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}"
+        )
+        st.info("If you expected findings, check: (1) date scope covers your data period, "
+                "(2) column names match exactly — Email, AccessLevel, FullName, "
+                "(3) HR file has EmploymentStatus and TerminationDate columns.")
     else:
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "🔎 Findings", "🛠️ Remediation", "⚖️ Frameworks", "📈 Analysis", "✍️ Opinion"
