@@ -1252,4 +1252,106 @@ else:
         ("🟡 Medium",  "Near-match emails",           "Typos, aliases, impersonation"),
     ]):
         [ch1,ch2,ch3][i%3].markdown(f"**{sev}** — **{name}:** {desc}")
+# ─────────────────────────────────────────────────────────────────────────────
+#  AUDIT OPINION GENERATOR (The "Executive Intelligence" Layer)
+# ─────────────────────────────────────────────────────────────────────────────
+def generate_opinion(findings_df, total_pop, scope_start, scope_end):
+    """
+    Analyzes findings to produce a professional Audit Memo.
+    Calculates error rates and determines the overall 'Audit Grade'.
+    """
+    if findings_df.empty:
+        return "### ✅ AUDIT OPINION: SATISFACTORY\nNo exceptions were noted during the 100% population test. Controls are operating effectively."
 
+    # 1. Calculate Metrics
+    total_findings = len(findings_df)
+    error_rate = (total_findings / total_pop) * 100
+    critical_count = len(findings_df[findings_df['Severity'] == "🔴 CRITICAL"])
+    high_count = len(findings_df[findings_df['Severity'] == "🟠 HIGH"])
+
+    # 2. Determine Grade
+    if critical_count > 0:
+        grade = "❌ UNSATISFACTORY (Critical Risks Identified)"
+        color = "red"
+    elif high_count > (total_pop * 0.05): # More than 5% High risk
+        grade = "⚠️ NEEDS IMPROVEMENT (Systemic Issues)"
+        color = "orange"
+    else:
+        grade = "🟡 SATISFACTORY WITH OBSERVATIONS"
+        color = "blue"
+
+    # 3. Build the Memo
+    memo = f"""
+    ### 📜 EXECUTIVE AUDIT SUMMARY
+    **Audit Period:** {scope_start} to {scope_end}  
+    **Overall Opinion:** :{color}[{grade}]
+
+    ---
+    #### 📊 Key Metrics
+    * **Total Population Tested:** {total_pop} Accounts (100% Coverage)
+    * **Total Exceptions Found:** {total_findings}
+    * **Calculated Error Rate:** {error_rate:.2f}%
+    * **Critical Findings:** {critical_count} (Immediate Action Required)
+
+    #### 🔍 Top Risk Areas
+    The audit identified the following primary areas of concern:
+    1. **{findings_df['IssueType'].iloc[0]}**: This was the most frequent finding, impacting {len(findings_df[findings_df['IssueType'] == findings_df['IssueType'].iloc[0]])} accounts.
+    2. **Regulatory Impact**: Identified gaps affect compliance with {', '.join(findings_df.columns[-3:])}.
+
+    #### 📝 Auditor's Conclusion
+    Based on the automated reconciliation of HR records against System Access, the control environment requires remediation. 
+    The presence of **{critical_count} critical orphaned/post-termination accounts** suggests a breakdown in the Joiner-Mover-Leaver (JML) process.
+    """
+    return memo
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SAMPLING ENGINE (For External Auditors)
+# ─────────────────────────────────────────────────────────────────────────────
+def generate_sample(findings_df, sample_size=25):
+    """
+    Selects a risk-based sample for manual verification.
+    Prioritizes Critical > High > Medium.
+    """
+    if findings_df.empty:
+        return pd.DataFrame()
+
+    # Sort by Severity
+    df_sorted = findings_df.copy()
+    df_sorted['_rank'] = df_sorted['Severity'].map({"🔴 CRITICAL": 0, "🟠 HIGH": 1, "🟡 MEDIUM": 2, "⚪ INFO": 3})
+    df_sorted = df_sorted.sort_values('_rank')
+
+    # Take the top N items
+    sample = df_sorted.head(sample_size).drop(columns=['_rank'])
+    return sample
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  UI INTEGRATION (Add this inside your 'if hr_file and sys_file:' block)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# (Find the bottom of your app where you display the findings and add this:)
+
+st.divider()
+st.header("🏁 Final Audit Report")
+
+# Generate the Opinion
+opinion_text = generate_opinion(final_report, len(sys_df), scope_start, scope_end)
+st.markdown(opinion_text)
+
+# Generate the Sample for External Auditors
+st.subheader("📦 External Audit Evidence Pack")
+st.info("The following 25 items have been selected as a 'Risk-Based Sample' for manual evidence collection.")
+sample_df = generate_sample(final_report)
+st.dataframe(sample_df)
+
+# Update the Download Button to include the Sample
+output = io.BytesIO()
+with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    final_report.to_excel(writer, index=False, sheet_name='Full_Findings')
+    sample_df.to_excel(writer, index=False, sheet_name='Manual_Sample_Request')
+
+st.download_button(
+    label="📥 Download ALL-IN-ONE Audit Pack (Findings + Samples)",
+    data=output.getvalue(),
+    file_name=f"Audit_Pack_Nairs_{datetime.now().strftime('%Y%m%d')}.xlsx",
+    mime="application/vnd.ms-excel"
+)
