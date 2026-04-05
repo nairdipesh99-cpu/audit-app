@@ -372,7 +372,11 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         pwd_age_days  = safe_days(pwd_set)
 
         # ── SCOPE CHECK ──────────────────────────────────────────────────────
-        anchor = acct_created or last_login or pwd_set
+        # Priority: LastLoginDate → PasswordLastSet → AccountCreatedDate
+        # Reason: an account active (logged in) during the scope period must be
+        # examined regardless of when it was created. AccountCreatedDate is a
+        # poor anchor — most accounts are created before the audit window.
+        anchor = last_login or pwd_set or acct_created
         if anchor is not None:
             if not (scope_start_dt <= anchor <= scope_end_dt):
                 excluded += 1
