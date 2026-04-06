@@ -22,7 +22,7 @@ WHAT CHANGED FROM v4:
 import streamlit as st
 import pandas as pd
 from thefuzz import fuzz
-import io
+import io, json, base64, re, random
 from datetime import datetime, date, timedelta
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -172,12 +172,22 @@ def make_finding(row_dict, issue_type, detail, days_inactive=None,
 # ─────────────────────────────────────────────────────────────────────────────
 def run_audit(hr_df, sys_df, scope_start, scope_end,
               dormant_days, pwd_expiry_days, fuzzy_threshold,
-              max_systems, selected_fw):
+              max_systems, selected_fw, sod_override=None):
 
     today_dt       = datetime.today()
     scope_start_dt = datetime.combine(scope_start, datetime.min.time())
     scope_end_dt   = datetime.combine(scope_end,   datetime.max.time())
     findings, excluded_count = [], 0
+
+    # Apply SoD rules from uploaded SOA/policy document if provided
+    # This means findings cite the CLIENT'S own policy, not hardcoded defaults
+    active_sod = {**SOD_RULES}
+    if sod_override:
+        for dept, rules in sod_override.items():
+            if dept in active_sod:
+                active_sod[dept] = list(set(active_sod[dept] + rules))
+            else:
+                active_sod[dept] = rules
 
     # ── Normalise HR ──────────────────────────────────────────────────────────
     hr = hr_df.copy()
@@ -349,7 +359,7 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # CHECK 9: SoD violation
         # Uses dept from HR (more reliable than system file dept column)
         # ═══════════════════════════════════════════════════════════════════
-        forbidden = SOD_RULES.get(dept, [])
+        forbidden = active_sod.get(dept, [])
         for fb in forbidden:
             if fb.lower() in u_access.lower():
                 findings.append(make_finding(
@@ -621,6 +631,10 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
             for itype in findings_df["IssueType"].unique():
                 write_sheet(findings_df[findings_df["IssueType"] == itype], sanitise_sheet(itype))
 
+        # Audit Sample sheet
+        sample_export = generate_audit_sample(findings_df, 25)
+        add_sample_sheet(writer, sample_export, wb, H, R, O, Y)
+
         # Raw data
         hr_clean  = hr_df.drop(columns=["_em","_email"], errors="ignore")
         sys_clean = sys_df.drop(columns=["_em","_email"], errors="ignore")
@@ -633,6 +647,295 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
 
     buf.seek(0)
     return buf.getvalue()
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FEATURE 1: CLAUDE VISION OCR — extract system access data from images/PDFs
+# ─────────────────────────────────────────────────────────────────────────────
+def ocr_via_claude(uploaded_file):
+    """
+    Send an image or PDF screenshot to Claude Vision.
+    Returns a DataFrame matching the system access schema, or None on failure.
+    """
+    import requests
+    try:
+        file_bytes = uploaded_file.read()
+        b64        = base64.b64encode(file_bytes).decode("utf-8")
+        fname      = uploaded_file.name.lower()
+        media_type = "application/pdf" if fname.endswith(".pdf") else "image/png" if fname.endswith(".png") else "image/jpeg"
+
+        prompt = """You are an IT audit assistant. The image shows a legacy system access report 
+(could be a green-screen terminal, a PDF printout, or a screenshot).
+
+Extract ALL user account rows you can see and return them as a JSON array.
+Each object must have these exact keys (use null if not visible):
+  Email, FullName, Department, AccessLevel, LastLoginDate, PasswordLastSet,
+  AccountCreatedDate, MFA, SystemName, AccountStatus
+
+Rules:
+- Email: if no email shown, construct one from username as username@unknown.local
+- AccessLevel: map role names to: Admin, DBAdmin, Finance, HR, CRM, Payroll, ReadOnly, Support
+- Dates: format as YYYY-MM-DD
+- MFA: Enabled or Disabled
+- AccountStatus: Enabled or Disabled
+
+Return ONLY the JSON array, no other text, no markdown fences."""
+
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json"},
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 2000,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                        {"type": "text",  "text": prompt}
+                    ]
+                }]
+            }
+        )
+        if response.status_code != 200:
+            return None, f"API error {response.status_code}: {response.text[:200]}"
+
+        text = response.json()["content"][0]["text"].strip()
+        text = re.sub(r"^```json|^```|```$", "", text.strip(), flags=re.MULTILINE).strip()
+        rows = json.loads(text)
+        df   = pd.DataFrame(rows)
+        return df, None
+
+    except json.JSONDecodeError as e:
+        return None, f"Could not parse Claude response as JSON: {e}"
+    except Exception as e:
+        return None, f"OCR failed: {e}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FEATURE 2: DYNAMIC SoD MATRIX — read from uploaded Excel
+# ─────────────────────────────────────────────────────────────────────────────
+def load_sod_matrix(uploaded_file):
+    """
+    Read a standalone SoD Matrix Excel file.
+    Expects columns: Department, ForbiddenAccessLevels (comma-separated)
+    Also accepts our SOA format which has a 'SoD Rules' sheet.
+    Returns dict {dept: [forbidden_levels]} or empty dict.
+    """
+    try:
+        uploaded_file.seek(0)
+        xl = pd.ExcelFile(uploaded_file)
+        sheet = None
+
+        # Try to find the right sheet
+        for name in xl.sheet_names:
+            if any(k in name.lower() for k in ["sod", "segregation", "matrix", "rules"]):
+                sheet = name
+                break
+        if sheet is None and xl.sheet_names:
+            sheet = xl.sheet_names[0]
+
+        df = pd.read_excel(uploaded_file, sheet_name=sheet)
+        df.columns = df.columns.str.strip()
+
+        # Try common column name patterns
+        dept_col    = next((c for c in df.columns if "dept" in c.lower() or "department" in c.lower()), None)
+        access_col  = next((c for c in df.columns if "forbidden" in c.lower() or "access" in c.lower() or "level" in c.lower()), None)
+
+        if not dept_col or not access_col:
+            return {}, f"Could not find Department and Forbidden columns. Found: {list(df.columns)}"
+
+        rules = {}
+        for _, row in df.iterrows():
+            dept    = str(row[dept_col]).strip()
+            raw     = str(row[access_col]).strip()
+            if dept and dept.lower() not in ("nan","none",""):
+                levels = [x.strip() for x in re.split(r"[,;/]", raw) if x.strip() and x.strip().lower() not in ("nan","none","")]
+                if levels:
+                    rules[dept] = levels
+        return rules, None
+
+    except Exception as e:
+        return {}, str(e)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FEATURE 3+5: CLAUDE API — professional audit memo + executive summary
+# ─────────────────────────────────────────────────────────────────────────────
+def generate_claude_opinion(findings_df, meta, scope_start, scope_end, total_pop, in_scope_count):
+    """
+    Use the Claude API to write a professional audit memo.
+    Falls back to the rule-based opinion if the API call fails.
+    """
+    import requests
+
+    total    = len(findings_df)
+    critical = len(findings_df[findings_df["Severity"] == "🔴 CRITICAL"]) if total else 0
+    high     = len(findings_df[findings_df["Severity"] == "🟠 HIGH"])     if total else 0
+    medium   = len(findings_df[findings_df["Severity"] == "🟡 MEDIUM"])   if total else 0
+    error_rate = round((total / in_scope_count * 100), 1) if in_scope_count > 0 else 0
+
+    # Top 3 most frequent issue types
+    if total > 0:
+        top3 = findings_df["IssueType"].value_counts().head(3).to_dict()
+        top3_str = ", ".join(f"{k} ({v} findings)" for k,v in top3.items())
+    else:
+        top3_str = "No findings"
+
+    # Department breakdown
+    if total > 0 and "Department" in findings_df.columns:
+        dept_breakdown = findings_df["Department"].value_counts().head(5).to_dict()
+        dept_str = ", ".join(f"{k}: {v}" for k,v in dept_breakdown.items())
+    else:
+        dept_str = "Not available"
+
+    prompt = f"""You are a Senior IT Auditor writing a professional audit memo for a board-level audience.
+
+ENGAGEMENT DATA:
+- Client: {meta.get('client', 'Nairs.com Ltd')}
+- Engagement Reference: {meta.get('ref', 'N/A')}
+- Lead Auditor: {meta.get('auditor', 'N/A')}
+- Audit Standard: {meta.get('standard', 'ISO 27001:2022')}
+- Review Period: {scope_start.strftime('%d %B %Y')} to {scope_end.strftime('%d %B %Y')}
+- Total population tested: {in_scope_count:,} system accounts
+- Total findings: {total}
+- Critical findings: {critical}
+- High findings: {high}
+- Medium findings: {medium}
+- Overall error rate: {error_rate}%
+- Top 3 issue types: {top3_str}
+- Findings by department: {dept_str}
+
+Write a professional audit memo with exactly these three sections:
+
+**SECTION 1 — EXECUTIVE SUMMARY** (2 paragraphs)
+Describe the overall risk posture. Mention the error rate. Reference the most impactful finding types. 
+Use language appropriate for a board-level or CISO audience.
+
+**SECTION 2 — KEY FINDINGS BREAKDOWN** (bullet points)
+Cover the top 3 most frequent finding types. For each one, state what was found, what the risk is, 
+and what ISO 27001:2022 control applies. Keep each bullet to 2-3 sentences.
+
+**SECTION 3 — FORMAL AUDIT OPINION**
+Issue one of: "Adverse" (5+ Criticals), "Qualified" (any Critical or 5+ High), 
+"Emphasis of Matter" (any High), or "Unqualified" (no Criticals or Highs).
+Write a formal opinion paragraph in standard audit language. 
+State the opinion clearly and explain what it means for the organisation.
+
+Format your response in clean markdown that will render well in Streamlit.
+Do not include any preamble — start directly with the first section heading.
+Today's date: {datetime.today().strftime('%d %B %Y')}"""
+
+    try:
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"Content-Type": "application/json"},
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1500,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+        )
+        if response.status_code == 200:
+            return response.json()["content"][0]["text"], True
+        else:
+            return None, False
+    except Exception:
+        return None, False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FEATURE 4: EVIDENCE SAMPLER — 25-item audit sample for external auditors
+# ─────────────────────────────────────────────────────────────────────────────
+def generate_audit_sample(findings_df, sample_size=25):
+    """
+    Produces a prioritised sample of findings for external auditor review.
+    Priority: Critical first → High → random Medium to fill to sample_size.
+    Returns a DataFrame of sample_size rows (or fewer if not enough findings).
+    """
+    if findings_df.empty:
+        return pd.DataFrame()
+
+    critical = findings_df[findings_df["Severity"] == "🔴 CRITICAL"].copy()
+    high     = findings_df[findings_df["Severity"] == "🟠 HIGH"].copy()
+    medium   = findings_df[findings_df["Severity"] == "🟡 MEDIUM"].copy()
+
+    sample = pd.DataFrame()
+
+    # Take all Criticals first (up to sample_size)
+    take_crit = min(len(critical), sample_size)
+    if take_crit > 0:
+        sample = pd.concat([sample, critical.head(take_crit)])
+
+    # Fill with Highs
+    remaining = sample_size - len(sample)
+    if remaining > 0 and len(high) > 0:
+        take_high = min(len(high), remaining)
+        sample = pd.concat([sample, high.head(take_high)])
+
+    # Fill remainder with random Mediums
+    remaining = sample_size - len(sample)
+    if remaining > 0 and len(medium) > 0:
+        take_med = min(len(medium), remaining)
+        sample = pd.concat([sample, medium.sample(take_med, random_state=42)])
+
+    # Add sample metadata columns
+    sample = sample.reset_index(drop=True)
+    sample.insert(0, "Sample#",       range(1, len(sample)+1))
+    sample.insert(1, "TestInstruction", sample["IssueType"].map({
+        "Orphaned Account":                        "Verify email does not exist in current HR system. Confirm account is disabled or deleted.",
+        "Terminated Employee with Active Account": "Confirm termination date in HR. Verify account was disabled within 24h per JML procedure.",
+        "Post-Termination Login":                  "Pull AD login audit log. Confirm login timestamp vs termination date. Escalate to Legal.",
+        "Toxic Access (SoD Violation)":            "Confirm current role from HR. Verify access level in live system. Request written CISO approval or escalate.",
+        "Dormant Account":                         "Confirm last login date from system extract. Check with line manager if access is still required.",
+        "MFA Not Enabled":                         "Log into identity portal. Confirm MFA status. Verify against MFA rollout register.",
+        "Password Never Expired":                  "Confirm PasswordLastSet from AD. Verify against password policy requirement.",
+        "Duplicate System Access":                 "Confirm both account IDs exist in live system. Identify primary account and request disable of duplicate.",
+        "Contractor Without Expiry Date":          "Obtain contract from Procurement. Confirm end date. Set account expiry in system.",
+        "Privilege Creep":                         "Pull full role history from IT. Confirm which roles are still needed with line manager.",
+        "Shared / Generic Account":                "Identify all individuals using this account. Provision named accounts. Disable shared account.",
+        "Service / System Account":                "Identify system/application using this account. Confirm named owner. Review permissions.",
+        "Super-User / Admin Access":               "Request written CISO justification. Confirm in exception register. Downgrade if unjustified.",
+        "Excessive Multi-System Access":           "List all systems. Send to line manager for recertification. Remove unconfirmed access.",
+        "Near-Match Email":                        "Cross-check with HR. Contact employee directly. Confirm ownership or treat as orphaned.",
+    }).fillna("Verify finding against source data and policy. Document evidence of testing."))
+    sample.insert(2, "EvidenceRequired", "Screenshot of live system + HR record extract + written confirmation from system owner")
+    sample.insert(3, "TestedBy",         "")
+    sample.insert(4, "TestDate",         "")
+    sample.insert(5, "TestResult",       "")
+    sample.insert(6, "AuditorNote",      "")
+
+    return sample
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  FEATURE 4: Add Audit_Sample sheet to Excel export (helper)
+# ─────────────────────────────────────────────────────────────────────────────
+def add_sample_sheet(writer, sample_df, wb, H, R, O, Y):
+    """Write the Audit_Sample_Request sheet into an open ExcelWriter."""
+    if sample_df is None or sample_df.empty:
+        return
+    clean = sample_df[[c for c in sample_df.columns if not c.startswith("_")]].copy()
+    clean.to_excel(writer, index=False, sheet_name="Audit_Sample_Request")
+    ws = writer.sheets["Audit_Sample_Request"]
+
+    # Column widths
+    widths = {"Sample#":8,"TestInstruction":55,"EvidenceRequired":40,"TestedBy":18,
+              "TestDate":14,"TestResult":16,"AuditorNote":36,
+              "Severity":14,"IssueType":28,"Email":36,"FullName":24,"Department":18}
+    for ci, col in enumerate(clean.columns):
+        ws.set_column(ci, ci, widths.get(col, 16))
+
+    # Header row
+    for ci, col in enumerate(clean.columns):
+        ws.write(0, ci, col, H)
+
+    # Row colours by severity
+    for ri, (_, row) in enumerate(clean.iterrows(), start=1):
+        s = str(row.get("Severity",""))
+        fmt = R if "CRITICAL" in s else (O if "HIGH" in s else (Y if "MEDIUM" in s else None))
+        if fmt:
+            ws.set_row(ri, None, fmt)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -848,9 +1151,9 @@ st.divider()
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("### 📂 Upload audit documents")
 st.caption(
-    "Upload all documents in one place. The tool automatically detects HR Master, "
-    "System Access List, SOA, policies and standards by filename. "
-    "Name your files clearly — e.g. `HR_Master_2025.xlsx`, `System_Access_2025.xlsx`, `SOA_ISO27001.xlsx`."
+    "Upload all documents in one place. The tool auto-detects each file by filename. "
+    "Name files clearly: `HR_Master_2025.xlsx` · `System_Access_2025.xlsx` · `SOA_ISO27001.xlsx` · "
+    "`SoD_Matrix.xlsx` · `Access_Control_Policy.pdf` · `JML_Procedure.pdf`"
 )
 
 uploaded_files = st.file_uploader(
@@ -916,6 +1219,42 @@ if uploaded_files:
             if sys_sel != "— not uploaded —":
                 sys_file = next(f for f in uploaded_files if f.name == sys_sel)
 
+
+# ── Feature 1: Legacy system / OCR upload ────────────────────────────────────
+with st.expander("📸 Legacy system upload — screenshot or PDF (OCR via Claude Vision)", expanded=False):
+    st.caption(
+        "For old systems that only produce screenshots or PDFs. "
+        "Upload an image or PDF — Claude Vision extracts the account data and converts it to the right format automatically."
+    )
+    ocr_file = st.file_uploader(
+        "Upload screenshot or PDF of legacy system report",
+        type=["png","jpg","jpeg","pdf"],
+        key="ocr_upload",
+        label_visibility="collapsed",
+    )
+    if ocr_file:
+        if st.button("🔍 Extract data from image", type="primary"):
+            with st.spinner("Sending to Claude Vision — extracting account data..."):
+                ocr_df, ocr_err = ocr_via_claude(ocr_file)
+            if ocr_err:
+                st.error(f"Extraction failed: {ocr_err}")
+            elif ocr_df is not None and not ocr_df.empty:
+                st.success(f"Extracted {len(ocr_df)} account rows from the image.")
+                st.dataframe(ocr_df, use_container_width=True, hide_index=True)
+                # Allow download as xlsx for uploading as system access file
+                buf = io.BytesIO()
+                ocr_df.to_excel(buf, index=False)
+                buf.seek(0)
+                st.download_button(
+                    "📥 Download extracted data as System_Access.xlsx",
+                    data=buf.getvalue(),
+                    file_name="System_Access_OCR_Extracted.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                st.caption("Download this file, then upload it as your System Access file above to run the full audit.")
+            else:
+                st.warning("No account rows could be extracted. Try a clearer image.")
+
 st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -923,7 +1262,7 @@ st.divider()
 #  Show what the tool extracted from each non-data document
 # ─────────────────────────────────────────────────────────────────────────────
 doc_context   = {}   # {dtype: text}
-soa_sod_extra = {}   # extra SoD rules extracted from SOA
+soa_sod_extra = {}   # SoD rules extracted from uploaded SOA/policy
 
 if doc_files:
     with st.expander(f"📄 Document intelligence — {len(doc_files)} policy/standard document(s) parsed", expanded=False):
@@ -936,11 +1275,21 @@ if doc_files:
             st.markdown(f"**{f.name}** — detected as: *{label}*")
             if text and not text.startswith("["):
                 st.caption(f"Extracted {len(text):,} characters. Findings will reference this document.")
-                # Try to extract SoD rules from SOA
-                if dtype in ("soa","access_policy"):
-                    extra = parse_soa_sod_extra = parse_soa_sod_rules(text)
+                # Try to extract SoD rules from SOA or dedicated SoD matrix
+                if dtype in ("soa","access_policy","sod_matrix","other"):
+                    # First try structured Excel SoD matrix parse
+                    if f.name.lower().endswith((".xlsx",".xls")):
+                        f.seek(0)
+                        matrix_rules, matrix_err = load_sod_matrix(f)
+                        if matrix_rules:
+                            st.caption(f"Loaded {len(matrix_rules)} SoD rules from Excel matrix — overrides hardcoded defaults.")
+                            soa_sod_extra.update(matrix_rules)
+                        elif not matrix_err:
+                            pass
+                    # Also try text-based extraction from SOA
+                    extra = parse_soa_sod_rules(text)
                     if extra:
-                        st.caption(f"Extracted {len(extra)} department SoD rules from document — applied to audit checks.")
+                        st.caption(f"Extracted {len(extra)} SoD rules from document text — applied to audit.")
                         soa_sod_extra.update(extra)
             else:
                 st.caption(text or "No text extracted.")
@@ -1027,6 +1376,7 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
             DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
             FUZZY_THRESHOLD, MAX_SYSTEMS,
             selected_fw,
+            sod_override=soa_sod_extra if soa_sod_extra else None,
         )
 
     in_scope_n = len(sys_df_f) - excluded_count
@@ -1095,8 +1445,8 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
     st.divider()
 
     # ── TABS ─────────────────────────────────────────────────────────────────
-    tab1,tab2,tab3,tab4,tab5 = st.tabs([
-        "🔎  Findings","🛠️  Remediation","⚖️  Frameworks","📈  Analysis","✍️  Opinion"
+    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+        "🔎  Findings","🛠️  Remediation","⚖️  Frameworks","📈  Analysis","✍️  Opinion","🎯  Audit Sample"
     ])
 
     sdf = findings_df.copy()
@@ -1178,12 +1528,100 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
                 st.bar_chart(dom.set_index("Email")["DaysInactive"])
 
     with tab5:
-        opinion = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
+        st.markdown("#### Audit opinion")
+        oc1, oc2 = st.columns([2,1])
+        with oc2:
+            use_claude = st.checkbox(
+                "Use Claude AI to write opinion",
+                value=True,
+                help="Uses the Claude API to write a professional 3-section audit memo. Falls back to rule-based if unavailable."
+            )
+        with oc1:
+            if use_claude:
+                st.caption("Claude will write a professional audit memo with Executive Summary, Key Findings, and Formal Opinion.")
+            else:
+                st.caption("Rule-based opinion generated from finding counts and severity levels.")
+
+        if use_claude:
+            if st.button("✍️ Generate AI Audit Opinion", type="primary", use_container_width=True):
+                with st.spinner("Claude is writing your audit memo..."):
+                    claude_opinion, success = generate_claude_opinion(
+                        findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n
+                    )
+                if success and claude_opinion:
+                    st.session_state["claude_opinion"] = claude_opinion
+                else:
+                    st.warning("Claude API unavailable — showing rule-based opinion instead.")
+                    st.session_state["claude_opinion"] = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
+
+            if "claude_opinion" in st.session_state:
+                st.markdown("---")
+                st.markdown(st.session_state["claude_opinion"])
+                st.markdown("---")
+                st.caption("⚠️ AI-generated content. Review and edit before any formal use. The responsible auditor must approve this opinion.")
+        else:
+            opinion = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
+            edited_opinion = st.text_area("Draft opinion (edit before use):",
+                                          value=opinion, height=440, label_visibility="visible")
+            st.caption("This draft is generated from finding counts and severity. It must be reviewed and approved before formal use.")
         if doc_files:
-            st.caption(f"Documents uploaded: {', '.join(f.name for f,_ in doc_files)}. Reference these explicitly in your final opinion.")
-        edited_opinion = st.text_area("Draft audit opinion (edit before use):",
-                                      value=opinion, height=440, label_visibility="visible")
-        st.caption("This draft is generated from finding counts and severity. It must be reviewed and approved by the responsible auditor before any formal use.")
+            st.caption(f"Documents uploaded: {', '.join(f.name for f,_ in doc_files)}. Reference these in your final opinion.")
+
+    with tab6:
+        st.markdown("#### Audit sample — 25 items for external auditors")
+        st.caption(
+            "External auditors always request a manual sample even after a full population test. "
+            "This generates a prioritised 25-item sample: Critical first, then High, then random Medium. "
+            "Each row includes a test instruction and evidence checklist for the external team."
+        )
+        ss1, ss2 = st.columns([1,3])
+        with ss1:
+            sample_size = st.number_input("Sample size", min_value=5, max_value=100, value=25, step=5)
+        with ss2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info(f"Will select up to {sample_size} findings — Critical priority first, then High, then random Medium.")
+
+        sample_df = generate_audit_sample(findings_df, sample_size)
+        if not sample_df.empty:
+            crit_in = len(sample_df[sample_df["Severity"]=="🔴 CRITICAL"])
+            high_in = len(sample_df[sample_df["Severity"]=="🟠 HIGH"])
+            med_in  = len(sample_df[sample_df["Severity"]=="🟡 MEDIUM"])
+            sc1,sc2,sc3,sc4 = st.columns(4)
+            sc1.metric("Total in sample", len(sample_df))
+            sc2.metric("Critical",  crit_in)
+            sc3.metric("High",      high_in)
+            sc4.metric("Medium",    med_in)
+
+            disp_cols = [c for c in ["Sample#","Severity","IssueType","Email","FullName",
+                                      "Department","TestInstruction"] if c in sample_df.columns]
+            st.dataframe(sample_df[disp_cols], use_container_width=True, hide_index=True, height=380,
+                column_config={
+                    "Sample#":        st.column_config.NumberColumn("No.", width="small"),
+                    "Severity":       st.column_config.TextColumn("Severity", width="small"),
+                    "TestInstruction":st.column_config.TextColumn("Test instruction", width="large"),
+                })
+
+            # Export sample to Excel
+            buf_s = io.BytesIO()
+            with pd.ExcelWriter(buf_s, engine="xlsxwriter") as wr:
+                wb_s = wr.book
+                H_s = wb_s.add_format({"bold":True,"bg_color":"#1F3864","font_color":"white","border":1,"font_name":"Arial","font_size":10})
+                R_s = wb_s.add_format({"bg_color":"#FFDEDE","font_name":"Arial","font_size":9})
+                O_s = wb_s.add_format({"bg_color":"#FFF0CC","font_name":"Arial","font_size":9})
+                Y_s = wb_s.add_format({"bg_color":"#FFFBCC","font_name":"Arial","font_size":9})
+                add_sample_sheet(wr, sample_df, wb_s, H_s, R_s, O_s, Y_s)
+            buf_s.seek(0)
+            ref_s = (meta.get("ref") or "Audit").replace(" ","_")
+            st.download_button(
+                label="📥 Download Audit_Sample_Request.xlsx",
+                data=buf_s.getvalue(),
+                file_name=f"Audit_Sample_{ref_s}_{datetime.today().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary", use_container_width=True,
+            )
+            st.caption("Hand this file to the external audit team. Each row has a test instruction, evidence requirement, and columns for their testing notes.")
+        else:
+            st.info("No findings to sample.")
 
     # ── EXPORT ───────────────────────────────────────────────────────────────
     st.divider()
@@ -1252,109 +1690,4 @@ else:
         ("🟡 Medium",  "Near-match emails",           "Typos, aliases, impersonation"),
     ]):
         [ch1,ch2,ch3][i%3].markdown(f"**{sev}** — **{name}:** {desc}")
-# ─────────────────────────────────────────────────────────────────────────────
-#  AUDIT OPINION GENERATOR (The "Executive Intelligence" Layer)
-# ─────────────────────────────────────────────────────────────────────────────
-def generate_opinion(findings_df, total_pop, scope_start, scope_end):
-    """
-    Analyzes findings to produce a professional Audit Memo.
-    Calculates error rates and determines the overall 'Audit Grade'.
-    """
-    if findings_df.empty:
-        return "### ✅ AUDIT OPINION: SATISFACTORY\nNo exceptions were noted during the 100% population test. Controls are operating effectively."
 
-    # 1. Calculate Metrics
-    total_findings = len(findings_df)
-    error_rate = (total_findings / total_pop) * 100
-    critical_count = len(findings_df[findings_df['Severity'] == "🔴 CRITICAL"])
-    high_count = len(findings_df[findings_df['Severity'] == "🟠 HIGH"])
-
-    # 2. Determine Grade
-    if critical_count > 0:
-        grade = "❌ UNSATISFACTORY (Critical Risks Identified)"
-        color = "red"
-    elif high_count > (total_pop * 0.05): # More than 5% High risk
-        grade = "⚠️ NEEDS IMPROVEMENT (Systemic Issues)"
-        color = "orange"
-    else:
-        grade = "🟡 SATISFACTORY WITH OBSERVATIONS"
-        color = "blue"
-
-    # 3. Build the Memo
-    memo = f"""
-    ### 📜 EXECUTIVE AUDIT SUMMARY
-    **Audit Period:** {scope_start} to {scope_end}  
-    **Overall Opinion:** :{color}[{grade}]
-
-    ---
-    #### 📊 Key Metrics
-    * **Total Population Tested:** {total_pop} Accounts (100% Coverage)
-    * **Total Exceptions Found:** {total_findings}
-    * **Calculated Error Rate:** {error_rate:.2f}%
-    * **Critical Findings:** {critical_count} (Immediate Action Required)
-
-    #### 🔍 Top Risk Areas
-    The audit identified the following primary areas of concern:
-    1. **{findings_df['IssueType'].iloc[0]}**: This was the most frequent finding, impacting {len(findings_df[findings_df['IssueType'] == findings_df['IssueType'].iloc[0]])} accounts.
-    2. **Regulatory Impact**: Identified gaps affect compliance with {', '.join(findings_df.columns[-3:])}.
-
-    #### 📝 Auditor's Conclusion
-    Based on the automated reconciliation of HR records against System Access, the control environment requires remediation. 
-    The presence of **{critical_count} critical orphaned/post-termination accounts** suggests a breakdown in the Joiner-Mover-Leaver (JML) process.
-    """
-    return memo
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  SAMPLING ENGINE (For External Auditors)
-# ─────────────────────────────────────────────────────────────────────────────
-def generate_sample(findings_df, sample_size=25):
-    """
-    Selects a risk-based sample for manual verification.
-    Prioritizes Critical > High > Medium.
-    """
-    if findings_df.empty:
-        return pd.DataFrame()
-
-    # Sort by Severity
-    df_sorted = findings_df.copy()
-    df_sorted['_rank'] = df_sorted['Severity'].map({"🔴 CRITICAL": 0, "🟠 HIGH": 1, "🟡 MEDIUM": 2, "⚪ INFO": 3})
-    df_sorted = df_sorted.sort_values('_rank')
-
-    # Take the top N items
-    sample = df_sorted.head(sample_size).drop(columns=['_rank'])
-    return sample
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  UI INTEGRATION (Corrected Variable Names)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# 'df' is the name of the findings dataframe created by run_audit() in your v5
-if not df.empty:
-    st.divider()
-    st.header("🏁 Final Audit Report")
-
-    # 1. Generate the Opinion (Pass 'df' as the first argument)
-    opinion_text = generate_opinion(df, len(sys_df), scope_start, scope_end)
-    st.markdown(opinion_text)
-
-    # 2. Generate the Sample for External Auditors
-    st.subheader("📦 External Audit Evidence Pack")
-    st.info("The following 25 items have been selected as a 'Risk-Based Sample' for manual evidence collection.")
-    sample_df = generate_sample(df)
-    st.dataframe(sample_df, use_container_width=True)
-
-    # 3. Create the Combined Download Pack
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Full_Findings')
-        sample_df.to_excel(writer, index=False, sheet_name='Manual_Sample_Request')
-    
-    st.download_button(
-        label="📥 Download ALL-IN-ONE Audit Pack (Findings + Samples)",
-        data=output.getvalue(),
-        file_name=f"Audit_Pack_Nairs_{datetime.now().strftime('%Y%m%d')}.xlsx",
-        mime="application/vnd.ms-excel"
-    )
-else:
-    st.balloons()
-    st.success("Audit Clean! 100% of accounts mapped to active employees.")
