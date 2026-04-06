@@ -1049,7 +1049,7 @@ def parse_soa_sod_rules(soa_text):
 #  PAGE CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="IAM Audit Platform — Nairs.com",
+    page_title="80 — IAM Audit Tool",
     layout="wide",
     page_icon="🛡️",
     initial_sidebar_state="expanded",
@@ -1059,7 +1059,17 @@ st.set_page_config(
 #  SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🛡️ IAM Audit Platform")
+    st.markdown("""
+<div style="display:flex;align-items:center;gap:10px;padding:4px 0 8px">
+  <div style="width:32px;height:32px;background:#1F3864;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+    <span style="font-size:14px;font-weight:800;color:#fff;font-family:system-ui,sans-serif">80</span>
+  </div>
+  <div>
+    <div style="font-size:14px;font-weight:700;color:#1F3864;font-family:system-ui,sans-serif">80</div>
+    <div style="font-size:10px;color:#8a9ab0;font-family:system-ui,sans-serif">IAM Audit Tool</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
     st.divider()
 
     st.markdown("#### Engagement details")
@@ -1137,14 +1147,20 @@ with st.sidebar:
         """)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HEADER
+#  HEADER — 80 brand mark
 # ─────────────────────────────────────────────────────────────────────────────
-st.title("🛡️ Identity & Access Management Audit Platform")
-st.caption(
-    f"15 automated checks · ISO 27001 · SOX · GDPR · PCI-DSS · "
-    f"Workpaper-ready report · {meta.get('standard','ISO 27001:2022')} audit"
-)
-st.divider()
+st.markdown("""
+<div style="display:flex;align-items:center;gap:18px;padding:18px 0 14px;border-bottom:1px solid #e8edf2;margin-bottom:20px">
+  <div style="width:56px;height:56px;background:#1F3864;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+    <span style="font-size:26px;font-weight:800;color:#ffffff;letter-spacing:-1px;font-family:system-ui,sans-serif">80</span>
+  </div>
+  <div>
+    <div style="font-size:24px;font-weight:700;color:#1F3864;letter-spacing:-0.5px;line-height:1.1;font-family:system-ui,sans-serif">80</div>
+    <div style="width:32px;height:2px;background:#1F3864;opacity:0.3;margin:4px 0"></div>
+    <div style="font-size:13px;color:#5F6B7A;letter-spacing:0.2px;font-family:system-ui,sans-serif">Identity Access Management Audit Tool</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  DOCUMENT UPLOAD ZONE — single intelligent zone for all documents
