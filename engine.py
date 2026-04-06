@@ -916,3 +916,85 @@ def add_sample_sheet(writer, sample_df, wb, H, R, O, Y):
         fmt = R if "CRITICAL" in s else (O if "HIGH" in s else (Y if "MEDIUM" in s else None))
         if fmt:
             ws.set_row(ri, None, fmt)
+
+# ── Document parsing helpers ──────────────────────────────────────────────────
+
+def extract_text(uploaded_file, max_chars=5000):
+    """Extract text from PDF, DOCX, TXT or XLSX. Returns empty string on failure."""
+    if uploaded_file is None:
+        return ""
+    name = uploaded_file.name.lower()
+    try:
+        if name.endswith(".txt"):
+            return uploaded_file.read().decode("utf-8", errors="ignore")[:max_chars]
+        elif name.endswith(".pdf"):
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(uploaded_file)
+                text = " ".join(p.extract_text() or "" for p in reader.pages[:10])
+                return text[:max_chars]
+            except Exception:
+                return "[PDF uploaded — install pypdf to extract content]"
+        elif name.endswith(".docx"):
+            try:
+                import docx
+                doc = docx.Document(uploaded_file)
+                return " ".join(p.text for p in doc.paragraphs)[:max_chars]
+            except Exception:
+                return "[DOCX uploaded — install python-docx to extract content]"
+        elif name.endswith((".xlsx",".xls")):
+            df = pd.read_excel(uploaded_file, sheet_name=None)
+            text_parts = []
+            for sheet_name, sheet_df in df.items():
+                text_parts.append(f"[Sheet: {sheet_name}]")
+                text_parts.append(sheet_df.to_string(index=False))
+            return " ".join(text_parts)[:max_chars]
+        elif name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+            return df.to_string(index=False)[:max_chars]
+    except Exception as e:
+        return f"[Could not parse {uploaded_file.name}: {e}]"
+    return ""
+
+def detect_doc_type(f):
+    """
+    Auto-detect document type from filename.
+    Returns one of: hr_master | system_access | soa | access_policy |
+                    jml_procedure | risk_register | other
+    """
+    if f is None:
+        return "other"
+    name = f.name.lower()
+    if any(k in name for k in ["hr_master","hr master","hrmaster","employee","staff_list","staff list","personnel"]):
+        return "hr_master"
+    if any(k in name for k in ["system_access","system access","access_list","access list","user_access","useraccess","sysaccess"]):
+        return "system_access"
+    if any(k in name for k in ["soa","statement_of_applicability","statement of applicability","annex_a","annex a"]):
+        return "soa"
+    if any(k in name for k in ["access_policy","access policy","access_control","access control policy"]):
+        return "access_policy"
+    if any(k in name for k in ["jml","joiner","mover","leaver","onboard","offboard","joinermover"]):
+        return "jml_procedure"
+    if any(k in name for k in ["risk_register","risk register","riskregister"]):
+        return "risk_register"
+    if any(k in name for k in ["iso","standard","policy","procedure","framework","gdpr","sox","pci"]):
+        return "standard"
+    return "other"
+
+def parse_soa_sod_rules(soa_text):
+    """
+    Try to extract SoD rules from uploaded SOA/policy text.
+    Returns a dict of {dept: [forbidden_access_levels]} or empty dict.
+    """
+    import re
+    rules = {}
+    # Look for patterns like "Finance: Admin, DBAdmin" or "Sales staff: Finance, Payroll"
+    dept_keywords = ["Finance","IT","HR","Sales","Marketing","Operations","Procurement","Legal","Risk","Support"]
+    access_keywords = ["Admin","Finance","Payroll","DBAdmin","HR","SysAdmin","FullControl","SuperAdmin","Root"]
+    for dept in dept_keywords:
+        pattern = rf"{dept}[^.\n]{{0,60}}({"|".join(access_keywords)})"
+        matches = re.findall(pattern, soa_text, re.IGNORECASE)
+        if matches:
+            rules[dept] = list(set(matches))
+    return rules
+
