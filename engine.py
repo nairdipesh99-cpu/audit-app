@@ -53,6 +53,9 @@ FRAMEWORK_REFS = {
     "Excessive Multi-System Access":            {"SOX":"SOX ITGC AC-2 — Access exceeds role requirements","ISO_27001":"ISO 27001 A.5.18 — Least privilege","GDPR":"GDPR Art.25 — Access minimisation","PCI_DSS":"PCI-DSS v4.0 Req 7.2 — Least privilege model"},
     "Near-Match Email":                         {"SOX":"SOX ITGC AC-1 — Identity verification failure","ISO_27001":"ISO 27001 A.5.16 — Identity management","GDPR":"GDPR Art.32 — Accuracy of identity data","PCI_DSS":"PCI-DSS v4.0 Req 8.2 — Proper identification of users"},
     "Contractor Without Expiry Date":           {"SOX":"SOX ITGC AC-2 — Third-party access has no end-date","ISO_27001":"ISO 27001 A.5.19 — Supplier relationship security","GDPR":"GDPR Art.28 — Processor agreements / access time-limits","PCI_DSS":"PCI-DSS v4.0 Req 8.6 — Third-party access must be time-limited"},
+    "RBAC Violation":                           {"SOX":"SOX ITGC AC-2 — Access provisioned beyond role entitlement","ISO_27001":"ISO 27001 A.5.15 — Access control / A.5.18 — Role-based access rights","GDPR":"GDPR Art.25 — Data protection by design / least privilege","PCI_DSS":"PCI-DSS v4.0 Req 7.2 — Least privilege access model"},
+    "Unauthorised Privileged Account":          {"SOX":"SOX ITGC AC-3 — Privileged access without approval or documentation","ISO_27001":"ISO 27001 A.8.2 — Privileged access rights management","GDPR":"GDPR Art.32 — Appropriate technical controls for privileged access","PCI_DSS":"PCI-DSS v4.0 Req 7.2.4 — Quarterly review of privileged accounts"},
+    "Privileged Account Review Overdue":        {"SOX":"SOX ITGC AC-2 — Periodic access review not completed","ISO_27001":"ISO 27001 A.8.2 — Privileged access rights / periodic review","GDPR":"GDPR Art.32 — Ongoing security measures","PCI_DSS":"PCI-DSS v4.0 Req 7.2.4 — Review privileged access quarterly"},
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -152,7 +155,8 @@ def make_finding(row_dict, issue_type, detail, days_inactive=None,
 # ─────────────────────────────────────────────────────────────────────────────
 def run_audit(hr_df, sys_df, scope_start, scope_end,
               dormant_days, pwd_expiry_days, fuzzy_threshold,
-              max_systems, selected_fw, sod_override=None):
+              max_systems, selected_fw, sod_override=None,
+              rbac_matrix=None, registry_df=None):
 
     today_dt       = datetime.today()
     scope_start_dt = datetime.combine(scope_start, datetime.min.time())
@@ -211,15 +215,51 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         pwd_days  = safe_days(pwd_set,    today_dt)
 
         # ── SCOPE FILTER ─────────────────────────────────────────────────────
-        # Include if ANY date falls within scope, OR if account has NO dates
-        # (date-less accounts are always suspicious — never exclude them)
+        # Logic:
+        #   - No dates at all        → always include (suspicious)
+        #   - Any date IN scope      → include
+        #   - Account CREATED before scope but logged in DURING scope → include
+        #   - Account created before scope, no login in scope → include if
+        #     AccountCreatedDate predates scope (could be dormant — important finding)
+        #   - All dates AFTER scope end → exclude (future data, wrong file)
+        # This ensures forensic/historical audits catch all relevant accounts.
         has_any_date = any([last_login, pwd_set, acct_created])
+
+        # Include if any date falls within scope
         date_in_scope = (
             in_scope(last_login,   scope_start_dt, scope_end_dt) or
             in_scope(pwd_set,      scope_start_dt, scope_end_dt) or
             in_scope(acct_created, scope_start_dt, scope_end_dt)
         )
-        if has_any_date and not date_in_scope:
+
+        # Also include if account was CREATED before scope end
+        # (active accounts that predate the audit period are valid subjects)
+        account_predates_scope_end = (
+            acct_created is not None and acct_created <= scope_end_dt
+        )
+
+        # Also include if last login was before scope end
+        # (account was active up to or during the audit period)
+        active_before_scope_end = (
+            last_login is not None and last_login <= scope_end_dt
+        )
+
+        should_include = (
+            not has_any_date or          # no dates = always include
+            date_in_scope or             # any date in scope window
+            account_predates_scope_end or # account existed before scope end
+            active_before_scope_end       # account was used before scope end
+        )
+
+        # Exclude only if ALL dates are clearly AFTER the scope end
+        # (this catches wrong-year data uploads)
+        all_dates_after_scope = has_any_date and all([
+            (last_login   is None or last_login   > scope_end_dt),
+            (pwd_set      is None or pwd_set      > scope_end_dt),
+            (acct_created is None or acct_created > scope_end_dt),
+        ])
+
+        if all_dates_after_scope:
             excluded_count += 1
             continue
 
@@ -412,6 +452,16 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
                 f"Likely carries legacy access from previous roles.",
                 days_idle, selected_fw=selected_fw,
             ))
+
+    # ── RBAC Matrix checks ───────────────────────────────────────────────────
+    if rbac_matrix:
+        rbac_findings = run_rbac_checks(sys_df, hr_df, rbac_matrix, selected_fw, today_dt)
+        findings.extend(rbac_findings)
+
+    # ── Privileged User Registry checks ──────────────────────────────────────
+    if registry_df is not None:
+        reg_findings = run_registry_checks(sys_df, hr_df, registry_df, selected_fw, today_dt)
+        findings.extend(reg_findings)
 
     # ── Build findings DataFrame ──────────────────────────────────────────────
     if not findings:
@@ -633,9 +683,9 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
 # ─────────────────────────────────────────────────────────────────────────────
 #  FEATURE 1: CLAUDE VISION OCR — extract system access data from images/PDFs
 # ─────────────────────────────────────────────────────────────────────────────
-def ocr_via_claude(uploaded_file):
+def ocr_via_ai(uploaded_file):
     """
-    Send an image or PDF screenshot to Claude Vision.
+    Send an image or PDF screenshot to the AI for data extraction.
     Returns a DataFrame matching the system access schema, or None on failure.
     """
     import requests
@@ -687,7 +737,7 @@ Return ONLY the JSON array, no other text, no markdown fences."""
         return df, None
 
     except json.JSONDecodeError as e:
-        return None, f"Could not parse Claude response as JSON: {e}"
+        return None, f"Could not parse AI response as JSON: {e}"
     except Exception as e:
         return None, f"OCR failed: {e}"
 
@@ -742,9 +792,9 @@ def load_sod_matrix(uploaded_file):
 # ─────────────────────────────────────────────────────────────────────────────
 #  FEATURE 3+5: CLAUDE API — professional audit memo + executive summary
 # ─────────────────────────────────────────────────────────────────────────────
-def generate_claude_opinion(findings_df, meta, scope_start, scope_end, total_pop, in_scope_count):
+def generate_ai_opinion(findings_df, meta, scope_start, scope_end, total_pop, in_scope_count):
     """
-    Use the Claude API to write a professional audit memo.
+    Use AI to write a professional audit memo.
     Falls back to the rule-based opinion if the API call fails.
     """
     import requests
@@ -916,6 +966,271 @@ def add_sample_sheet(writer, sample_df, wb, H, R, O, Y):
         fmt = R if "CRITICAL" in s else (O if "HIGH" in s else (Y if "MEDIUM" in s else None))
         if fmt:
             ws.set_row(ri, None, fmt)
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  RBAC MATRIX PARSER
+# ─────────────────────────────────────────────────────────────────────────────
+def load_rbac_matrix(uploaded_file):
+    """
+    Read an RBAC Matrix Excel file.
+    Expected columns: JobTitle, System (optional), PermittedAccess
+    Returns dict: {job_title: [permitted_access_levels]}
+    Also accepts: {job_title: {system: permitted_access}}
+
+    Example file:
+      JobTitle          | System           | PermittedAccess
+      Finance Manager   | SAP Finance      | Full Access
+      Finance Manager   | Active Directory | Read Only
+      Sales Executive   | CRM              | Full Access
+    """
+    try:
+        uploaded_file.seek(0)
+        df = pd.read_excel(uploaded_file)
+        df.columns = df.columns.str.strip()
+
+        # Flexible column detection
+        title_col  = next((c for c in df.columns if any(k in c.lower() for k in
+                           ["job","title","role","position","designation"])), None)
+        access_col = next((c for c in df.columns if any(k in c.lower() for k in
+                           ["permitted","access","level","entitlement","right"])), None)
+        system_col = next((c for c in df.columns if any(k in c.lower() for k in
+                           ["system","application","app","platform"])), None)
+
+        if not title_col or not access_col:
+            return {}, f"Could not detect JobTitle and PermittedAccess columns. Found: {list(df.columns)}"
+
+        matrix = {}
+        for _, row in df.iterrows():
+            job   = str(row[title_col]).strip()
+            perms = str(row[access_col]).strip()
+            if job.lower() in ("nan","none","") or perms.lower() in ("nan","none",""):
+                continue
+            # Parse comma-separated permitted levels
+            levels = [p.strip() for p in perms.split(",") if p.strip()]
+            if job not in matrix:
+                matrix[job] = []
+            matrix[job].extend(levels)
+            # Deduplicate
+            matrix[job] = list(set(matrix[job]))
+
+        return matrix, None
+
+    except Exception as e:
+        return {}, str(e)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PRIVILEGED USER REGISTRY LOADER
+# ─────────────────────────────────────────────────────────────────────────────
+def load_privileged_registry(uploaded_file):
+    """
+    Read a Privileged User Registry Excel file.
+    Expected columns: Email, AccessLevel, Owner, Justification,
+                      ApprovedBy, LastReviewDate
+    Returns a DataFrame of registered privileged accounts.
+
+    Example file:
+      Email                  | AccessLevel | Owner       | LastReviewDate
+      john.smith@nairs.com   | Admin       | John Smith  | 2025-01-15
+      svc.backup@nairs.com   | DBAdmin     | IT Manager  | 2024-06-01
+    """
+    try:
+        uploaded_file.seek(0)
+        df = pd.read_excel(uploaded_file)
+        df.columns = df.columns.str.strip()
+
+        # Flexible column detection
+        email_col  = next((c for c in df.columns if "email" in c.lower() or
+                           "account" in c.lower()), None)
+        access_col = next((c for c in df.columns if any(k in c.lower() for k in
+                           ["access","level","role","privilege"])), None)
+        review_col = next((c for c in df.columns if any(k in c.lower() for k in
+                           ["review","last","date","renewed"])), None)
+
+        if not email_col:
+            return None, f"Could not detect Email/Account column. Found: {list(df.columns)}"
+
+        # Normalise email column
+        df["_email_norm"] = df[email_col].str.strip().str.lower()
+
+        # Parse review date if present
+        if review_col:
+            df["_review_date"] = pd.to_datetime(df[review_col], errors="coerce")
+        else:
+            df["_review_date"] = None
+
+        return df, None
+
+    except Exception as e:
+        return None, str(e)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  RBAC CHECK — run against full system df
+# ─────────────────────────────────────────────────────────────────────────────
+def run_rbac_checks(sys_df, hr_df, rbac_matrix, selected_fw, today_dt):
+    """
+    Compare each account's actual access against what their job title
+    permits in the RBAC Matrix. Returns list of finding dicts.
+    """
+    findings = []
+    if not rbac_matrix or sys_df.empty or hr_df.empty:
+        return findings
+
+    hr = hr_df.copy()
+    hr["_em"] = hr["Email"].str.strip().str.lower()
+    hr = hr.drop_duplicates(subset="_em", keep="first")
+    hr_lkp = hr.set_index("_em")
+
+    sys = sys_df.copy()
+    sys["_em"] = sys["Email"].str.strip().str.lower()
+
+    for _, row in sys.iterrows():
+        u_email  = str(row.get("Email","")).strip().lower()
+        u_access = str(row.get("AccessLevel","")).strip()
+        row_dict = row.to_dict()
+
+        # Only check accounts that exist in HR
+        if u_email not in set(hr["_em"]):
+            continue
+
+        hr_row   = hr_lkp.loc[u_email]
+        job      = str(hr_row.get("JobTitle","")).strip()
+        emp_stat = str(hr_row.get("EmploymentStatus","Active")).strip().lower()
+
+        # Skip terminated employees — handled by other checks
+        if emp_stat in ("terminated","resigned","inactive"):
+            continue
+
+        if not job or job.lower() in ("nan","none","unknown",""):
+            continue
+
+        # Find permitted access for this job title
+        permitted = rbac_matrix.get(job, [])
+        if not permitted:
+            continue  # Job not in matrix — cannot assess
+
+        # Parse actual access levels (comma-separated)
+        actual_levels = [a.strip() for a in u_access.split(",") if a.strip()]
+
+        # Check each actual level against permitted list
+        violations = []
+        for level in actual_levels:
+            # Check if this level is permitted (case-insensitive partial match)
+            is_permitted = any(
+                level.lower() in p.lower() or p.lower() in level.lower()
+                for p in permitted
+            )
+            if not is_permitted:
+                violations.append(level)
+
+        if violations:
+            findings.append(make_finding(
+                row_dict,
+                "RBAC Violation",
+                f"'{job}' is permitted {permitted} per RBAC Matrix but holds "
+                f"'{', '.join(violations)}' — access exceeds role entitlement. "
+                f"Actual access: '{u_access}'.",
+                selected_fw=selected_fw,
+            ))
+
+    return findings
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PRIVILEGED USER REGISTRY CHECK
+# ─────────────────────────────────────────────────────────────────────────────
+def run_registry_checks(sys_df, hr_df, registry_df, selected_fw, today_dt):
+    """
+    Cross-reference every privileged account found in the system
+    against the Privileged User Registry.
+    Flags:
+      - Privileged accounts NOT in the registry (unauthorised)
+      - Registry entries whose review date is > 12 months ago (overdue)
+    """
+    findings = []
+    if registry_df is None or sys_df.empty:
+        return findings
+
+    from datetime import timedelta
+    REVIEW_THRESHOLD_DAYS = 365
+
+    reg_emails  = set(registry_df["_email_norm"].dropna())
+    sys = sys_df.copy()
+    sys["_em"] = sys["Email"].str.strip().str.lower()
+
+    # Build HR lookup for employment status
+    hr = hr_df.copy()
+    hr["_em"] = hr["Email"].str.strip().str.lower()
+    hr = hr.drop_duplicates(subset="_em", keep="first")
+    hr_em_set = set(hr["_em"])
+    hr_lkp = hr.set_index("_em")
+
+    checked_for_overdue = set()  # avoid duplicate overdue findings
+
+    for _, row in sys.iterrows():
+        u_email  = str(row.get("Email","")).strip().lower()
+        u_access = str(row.get("AccessLevel","")).strip()
+        u_name   = str(row.get("FullName", u_email)).strip()
+        row_dict = row.to_dict()
+
+        # Only check privileged accounts
+        is_privileged = any(
+            hr_kw.lower() in u_access.lower()
+            for hr_kw in HIGH_RISK_ACCESS
+        )
+        if not is_privileged:
+            continue
+
+        # Skip terminated employees
+        if u_email in hr_em_set:
+            hr_row   = hr_lkp.loc[u_email]
+            emp_stat = str(hr_row.get("EmploymentStatus","Active")).strip().lower()
+            if emp_stat in ("terminated","resigned","inactive"):
+                continue
+
+        # Check 1: Is this account in the registry?
+        if u_email not in reg_emails:
+            findings.append(make_finding(
+                row_dict,
+                "Unauthorised Privileged Account",
+                f"'{u_name}' holds privileged access '{u_access}' but does NOT appear "
+                f"in the Privileged User Registry. No documented approval, justification "
+                f"or named owner on record.",
+                selected_fw=selected_fw,
+            ))
+        else:
+            # Check 2: Is the review date current?
+            reg_row = registry_df[registry_df["_email_norm"] == u_email].iloc[0]
+            review_date = reg_row.get("_review_date")
+
+            if u_email not in checked_for_overdue:
+                checked_for_overdue.add(u_email)
+                if review_date is not None and not pd.isna(review_date):
+                    days_since = (today_dt - review_date).days
+                    if days_since > REVIEW_THRESHOLD_DAYS:
+                        findings.append(make_finding(
+                            row_dict,
+                            "Privileged Account Review Overdue",
+                            f"'{u_name}' holds privileged access '{u_access}'. "
+                            f"Last registry review was {days_since} days ago "
+                            f"({review_date.strftime('%d %b %Y')}). "
+                            f"Policy requires review every 12 months.",
+                            selected_fw=selected_fw,
+                        ))
+                elif review_date is None or pd.isna(review_date):
+                    findings.append(make_finding(
+                        row_dict,
+                        "Privileged Account Review Overdue",
+                        f"'{u_name}' holds privileged access '{u_access}'. "
+                        f"Privileged User Registry entry has no LastReviewDate recorded. "
+                        f"Cannot confirm this account has ever been formally reviewed.",
+                        selected_fw=selected_fw,
+                    ))
+
+    return findings
 
 # ── Document parsing helpers ──────────────────────────────────────────────────
 
