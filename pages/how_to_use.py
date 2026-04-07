@@ -74,7 +74,7 @@ with st.expander("Using a legacy system that only produces screenshots or PDFs?"
 Expand the **Legacy system upload** section below the main upload zone.
 Upload your screenshot or PDF. Click **Extract data from image**.
 
-Claude Vision reads the image and extracts account data — usernames, access levels, login dates — 
+AI reads the image and extracts account data — usernames, access levels, login dates — 
 and structures it into the correct format. Download it as an Excel file, then upload it as your 
 System Access file to run the full 15 checks.
 
@@ -126,7 +126,7 @@ tabs_info = [
     ("🛠️ Remediation", "4-step action plan, named owner and SLA for every finding. Expand each row to see the full remediation instructions. Filter by severity to focus on Critical first. This is what you share with the IT Manager as their action list."),
     ("⚖️ Frameworks",  "SOX, ISO 27001, GDPR and PCI-DSS reference per finding. The exact control clause is cited — not just the framework name. Use this tab when the client asks which control was breached."),
     ("📈 Analysis",    "Breakdown by severity, issue type and department. Bar chart showing dormant account inactivity distribution. Use this for the management presentation."),
-    ("✍️ Opinion",     "Toggle between Claude AI opinion (recommended) and rule-based. Click Generate to have Claude write a professional 3-section audit memo. Always review and edit before using. The responsible auditor must approve this opinion."),
+    ("✍️ Opinion",     "Toggle between AI-generated opinion and rule-based. Click Generate for a professional 3-section audit memo. Always review and edit before using. The responsible auditor must approve this opinion."),
     ("🎯 Audit Sample","Set your sample size (default 25). 80 selects Critical findings first, then High, then random Medium to fill the target. Each row has a specific test instruction. Download and hand to the external audit team."),
 ]
 
