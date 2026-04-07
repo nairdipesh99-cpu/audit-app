@@ -71,9 +71,9 @@ with col2:
         "Full population tested in under 10 minutes",
         "Every account checked across all 15 issue types",
         "SOX, ISO 27001, GDPR, PCI-DSS cited automatically per finding",
-        "Claude AI writes the professional audit memo",
+        "AI writes the professional audit memo",
         "25-item prioritised sample with test instructions — one click",
-        "Claude Vision extracts account data from any image or PDF",
+        "AI extracts account data from any image or PDF",
     ]:
         st.markdown(f"✓ {item}")
 
