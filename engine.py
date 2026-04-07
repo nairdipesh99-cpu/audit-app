@@ -1292,6 +1292,12 @@ def detect_doc_type(f):
         return "jml_procedure"
     if any(k in name for k in ["risk_register","risk register","riskregister"]):
         return "risk_register"
+    if any(k in name for k in ["rbac","role_matrix","role matrix","access_matrix","entitlement","permission_matrix"]):
+        return "rbac_matrix"
+    if any(k in name for k in ["privileged","priv_register","priv register","admin_register","privileged_user","privileged user"]):
+        return "privileged_registry"
+    if any(k in name for k in ["ual","active_directory","active directory","ad_export","user_access_list"]):
+        return "system_access"
     if any(k in name for k in ["iso","standard","policy","procedure","framework","gdpr","sox","pci"]):
         return "standard"
     return "other"
