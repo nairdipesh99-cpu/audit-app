@@ -105,11 +105,11 @@ with s1:
     st.markdown("")
 
     st.markdown("**Legacy system OCR**")
-    st.markdown("Old systems that only produce screenshots or PDFs are no longer a blocker. Upload the image to 80 and Claude Vision extracts the account data, structures it into the correct format, and makes it available for the full 15-check audit.")
+    st.markdown("Old systems that only produce screenshots or PDFs are no longer a blocker. Upload the image to 80 — AI extracts the account data, structures it into the correct format, and makes it available for the full 15-check audit.")
 
 with s2:
     st.markdown("**AI audit opinion**")
-    st.markdown("80 uses the Claude API to write a professional 3-section audit memo — Executive Summary with error rate, Key Findings breakdown with ISO references, and a Formal Audit Opinion with the correct level (Adverse / Qualified / Emphasis / Unqualified). The auditor reviews and signs it.")
+    st.markdown("80 uses AI to write a professional 3-section audit memo — Executive Summary with error rate, Key Findings breakdown with ISO references, and a Formal Audit Opinion with the correct level (Adverse / Qualified / Emphasis / Unqualified). The auditor reviews and signs it.")
     st.markdown("")
 
     st.markdown("**Evidence sampler**")
