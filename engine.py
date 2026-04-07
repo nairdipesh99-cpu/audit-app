@@ -126,8 +126,42 @@ def make_finding(row_dict, issue_type, detail, days_inactive=None,
                  post_term_days=None, selected_fw=None):
     rem  = REMEDIATION.get(issue_type, {})
     refs = FRAMEWORK_REFS.get(issue_type, {})
+
+    # ── Guarantee no blank columns on flagged accounts ────────────────────────
+    # If FullName is missing, fall back to email prefix (readable identifier)
+    email_val   = str(row_dict.get("Email", "")).strip()
+    name_val    = str(row_dict.get("FullName", "")).strip()
+    if not name_val or name_val.lower() in ("nan","none",""):
+        # Derive readable name from email: john.smith@nairs.com → John Smith
+        prefix = email_val.split("@")[0] if "@" in email_val else email_val
+        name_val = prefix.replace(".", " ").replace("_", " ").title()
+
+    dept_val    = str(row_dict.get("Department", "")).strip()
+    if not dept_val or dept_val.lower() in ("nan","none",""):
+        dept_val = "Unknown Department"
+
+    access_val  = str(row_dict.get("AccessLevel", "")).strip()
+    if not access_val or access_val.lower() in ("nan","none",""):
+        access_val = "Not specified"
+
+    job_val     = str(row_dict.get("JobTitle", "")).strip()
+    if not job_val or job_val.lower() in ("nan","none",""):
+        job_val = "Not specified"
+
+    system_val  = str(row_dict.get("SystemName", "")).strip()
+    if not system_val or system_val.lower() in ("nan","none",""):
+        system_val = "Not specified"
+
     f = {
         **row_dict,
+        # Override with guaranteed non-blank values
+        "Email":            email_val,
+        "FullName":         name_val,
+        "Department":       dept_val,
+        "AccessLevel":      access_val,
+        "JobTitle":         job_val,
+        "SystemName":       system_val,
+        # Finding metadata
         "IssueType":        issue_type,
         "Severity":         rem.get("severity",  "⚪ INFO"),
         "Detail":           detail,
@@ -202,10 +236,19 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
     # ── Row-by-row checks ─────────────────────────────────────────────────────
     for _, row in sys.iterrows():
         u_email  = str(row.get("Email", "")).strip().lower()
-        u_access = str(row.get("AccessLevel", "")).strip()
-        u_name   = str(row.get("FullName", row.get("Email", ""))).strip()
+        u_access = str(row.get("AccessLevel", "Not specified")).strip()
+        # FullName is optional — if absent derive from email prefix
+        _raw_name = str(row.get("FullName", "")).strip()
+        if _raw_name and _raw_name.lower() not in ("nan","none",""):
+            u_name = _raw_name
+        else:
+            _prefix = u_email.split("@")[0] if "@" in u_email else u_email
+            u_name = _prefix.replace(".", " ").replace("_", " ").title()
         u_mfa    = str(row.get("MFA", "")).strip().lower()
         row_dict = row.to_dict()
+        # Inject derived name back so make_finding picks it up
+        if not row_dict.get("FullName") or str(row_dict.get("FullName","")).lower() in ("nan","none",""):
+            row_dict["FullName"] = u_name
 
         last_login   = parse_date(row.get("LastLoginDate"))
         pwd_set      = parse_date(row.get("PasswordLastSet"))
@@ -1172,9 +1215,16 @@ def run_registry_checks(sys_df, hr_df, registry_df, selected_fw, today_dt):
 
     for _, row in sys.iterrows():
         u_email  = str(row.get("Email","")).strip().lower()
-        u_access = str(row.get("AccessLevel","")).strip()
-        u_name   = str(row.get("FullName", u_email)).strip()
+        u_access = str(row.get("AccessLevel","Not specified")).strip()
+        _raw_name = str(row.get("FullName","")).strip()
+        if _raw_name and _raw_name.lower() not in ("nan","none",""):
+            u_name = _raw_name
+        else:
+            _prefix = u_email.split("@")[0] if "@" in u_email else u_email
+            u_name = _prefix.replace(".", " ").replace("_", " ").title()
         row_dict = row.to_dict()
+        if not row_dict.get("FullName") or str(row_dict.get("FullName","")).lower() in ("nan","none",""):
+            row_dict["FullName"] = u_name
 
         # Only check privileged accounts
         is_privileged = any(
