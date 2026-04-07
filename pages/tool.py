@@ -637,28 +637,208 @@ The tool supports up to 15 years back.
         st.dataframe(sdf[fw_cols], use_container_width=True, hide_index=True, height=420)
 
     with tab4:
-        an1,an2,an3 = st.columns(3)
-        with an1:
+        st.markdown("### Risk analysis")
+
+        # ── Row 1: Pie chart + severity table + issue type table ─────────────
+        pc1, pc2, pc3 = st.columns([2, 1, 1])
+
+        with pc1:
+            st.markdown("**Overall risk gap — severity distribution**")
+            # Build severity counts
+            sev_map = {"🔴 CRITICAL": 0, "🟠 HIGH": 0, "🟡 MEDIUM": 0}
+            for sev in findings_df["Severity"]:
+                if sev in sev_map:
+                    sev_map[sev] += 1
+            sev_labels = [s.split(" ", 1)[1] for s in sev_map.keys()]
+            sev_vals   = list(sev_map.values())
+            sev_colors = ["#E24B4A","#EF9F27","#F9CB42"]
+
+            # Build pie chart using plotly if available, else native bar
+            try:
+                import plotly.graph_objects as go
+                fig = go.Figure(data=[go.Pie(
+                    labels=sev_labels,
+                    values=sev_vals,
+                    hole=0.45,
+                    marker=dict(colors=sev_colors,
+                                line=dict(color="#ffffff", width=2)),
+                    textinfo="label+percent",
+                    textfont=dict(size=13),
+                    hovertemplate="%{label}<br>%{value} findings<br>%{percent}<extra></extra>",
+                )])
+                fig.update_layout(
+                    margin=dict(t=20, b=20, l=20, r=20),
+                    height=280,
+                    showlegend=False,
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Arial", color="#404040"),
+                    annotations=[dict(
+                        text=f"<b>{total}</b><br>findings",
+                        x=0.5, y=0.5, font_size=14,
+                        showarrow=False, font_color="#1F3864"
+                    )]
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            except ImportError:
+                # Fallback: simple bar chart
+                sev_df = pd.DataFrame({"Severity": sev_labels, "Count": sev_vals})
+                st.bar_chart(sev_df.set_index("Severity"))
+
+        with pc2:
             st.markdown("**By severity**")
             bsev = findings_df["Severity"].value_counts().reset_index()
             bsev.columns = ["Severity","Count"]
-            st.dataframe(bsev, use_container_width=True, hide_index=True)
-        with an2:
+            # Add percentage column
+            bsev["% of total"] = (bsev["Count"] / total * 100).round(1).astype(str) + "%"
+            st.dataframe(bsev, use_container_width=True, hide_index=True, height=260)
+
+        with pc3:
+            st.markdown("**Error rate**")
+            error_rate = round(total / in_scope_n * 100, 1) if in_scope_n > 0 else 0
+            crit_rate  = round(cnt("Severity","🔴 CRITICAL") / in_scope_n * 100, 1) if in_scope_n > 0 else 0
+            st.metric("Overall error rate",  f"{error_rate}%", help="Findings as % of accounts scanned")
+            st.metric("Critical error rate", f"{crit_rate}%",  help="Critical findings as % of accounts scanned")
+            st.metric("Accounts clean",
+                f"{in_scope_n - total:,}",
+                help="Accounts with no findings")
+            st.metric("Accounts with issues",
+                f"{min(total, in_scope_n):,}",
+                help="Note: one account can have multiple findings")
+
+        st.divider()
+
+        # ── Row 2: Department risk heatmap ────────────────────────────────────
+        if "Department" in findings_df.columns:
+            st.markdown("**Department risk breakdown**")
+            st.caption("Shows which departments have the most findings by severity — use this to prioritise your fieldwork.")
+
+            dept_crit  = findings_df[findings_df["Severity"]=="🔴 CRITICAL"]["Department"].value_counts()
+            dept_high  = findings_df[findings_df["Severity"]=="🟠 HIGH"]["Department"].value_counts()
+            dept_med   = findings_df[findings_df["Severity"]=="🟡 MEDIUM"]["Department"].value_counts()
+            all_depts_f= sorted(findings_df["Department"].dropna().unique())
+
+            dept_heat = pd.DataFrame({
+                "Department": all_depts_f,
+                "🔴 Critical": [dept_crit.get(d, 0) for d in all_depts_f],
+                "🟠 High":     [dept_high.get(d, 0) for d in all_depts_f],
+                "🟡 Medium":   [dept_med.get(d, 0)  for d in all_depts_f],
+            })
+            dept_heat["Total"] = dept_heat["🔴 Critical"] + dept_heat["🟠 High"] + dept_heat["🟡 Medium"]
+            dept_heat = dept_heat.sort_values("Total", ascending=False)
+
+            # Risk rating
+            def risk_rating(row):
+                if row["🔴 Critical"] >= 5:  return "🔴 High Risk"
+                if row["🔴 Critical"] >= 1:  return "🟠 Elevated"
+                if row["🟠 High"] >= 5:      return "🟠 Elevated"
+                if row["🟠 High"] >= 1:      return "🟡 Moderate"
+                return "🟢 Low Risk"
+            dept_heat["Risk Rating"] = dept_heat.apply(risk_rating, axis=1)
+
+            st.dataframe(
+                dept_heat,
+                use_container_width=True,
+                hide_index=True,
+                height=min(50 + len(dept_heat) * 35, 480),
+                column_config={
+                    "Department":   st.column_config.TextColumn("Department",   width="medium"),
+                    "🔴 Critical":  st.column_config.NumberColumn("🔴 Critical", width="small"),
+                    "🟠 High":      st.column_config.NumberColumn("🟠 High",     width="small"),
+                    "🟡 Medium":    st.column_config.NumberColumn("🟡 Medium",   width="small"),
+                    "Total":        st.column_config.NumberColumn("Total",       width="small"),
+                    "Risk Rating":  st.column_config.TextColumn("Risk Rating",   width="medium"),
+                }
+            )
+
+            # Department risk pie chart
+            st.markdown("**Top 8 departments by total findings**")
+            top8 = dept_heat.head(8)
+            try:
+                import plotly.graph_objects as go
+                fig2 = go.Figure(data=[go.Bar(
+                    x=top8["Department"].tolist(),
+                    y=top8["🔴 Critical"].tolist(),
+                    name="Critical",
+                    marker_color="#E24B4A",
+                )])
+                fig2.add_trace(go.Bar(
+                    x=top8["Department"].tolist(),
+                    y=top8["🟠 High"].tolist(),
+                    name="High",
+                    marker_color="#EF9F27",
+                ))
+                fig2.add_trace(go.Bar(
+                    x=top8["Department"].tolist(),
+                    y=top8["🟡 Medium"].tolist(),
+                    name="Medium",
+                    marker_color="#F9CB42",
+                ))
+                fig2.update_layout(
+                    barmode="stack",
+                    height=320,
+                    margin=dict(t=20, b=60, l=40, r=20),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Arial", color="#404040"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    xaxis=dict(tickangle=-30, gridcolor="rgba(0,0,0,0.05)"),
+                    yaxis=dict(gridcolor="rgba(0,0,0,0.05)", title="Findings"),
+                )
+                st.plotly_chart(fig2, use_container_width=True)
+            except ImportError:
+                st.bar_chart(top8.set_index("Department")[["🔴 Critical","🟠 High","🟡 Medium"]])
+
+        st.divider()
+
+        # ── Row 3: Issue type breakdown + dormant chart ────────────────────────
+        r3a, r3b = st.columns(2)
+        with r3a:
             st.markdown("**By issue type**")
             btyp = findings_df["IssueType"].value_counts().reset_index()
             btyp.columns = ["Issue Type","Count"]
-            st.dataframe(btyp, use_container_width=True, hide_index=True)
-        with an3:
-            if "Department" in findings_df.columns:
-                st.markdown("**By department**")
-                bdept = findings_df["Department"].value_counts().reset_index()
-                bdept.columns = ["Department","Count"]
-                st.dataframe(bdept, use_container_width=True, hide_index=True)
-        if "DaysInactive" in findings_df.columns:
-            dom = findings_df[findings_df["DaysInactive"].notna() & (findings_df["IssueType"]=="Dormant Account")]
-            if not dom.empty:
-                st.markdown("**Dormant account inactivity (days)**")
-                st.bar_chart(dom.set_index("Email")["DaysInactive"])
+            btyp["% of total"] = (btyp["Count"] / total * 100).round(1).astype(str) + "%"
+            st.dataframe(btyp, use_container_width=True, hide_index=True, height=360)
+
+        with r3b:
+            if "DaysInactive" in findings_df.columns:
+                dom = findings_df[
+                    findings_df["DaysInactive"].notna() &
+                    (findings_df["IssueType"] == "Dormant Account")
+                ].copy()
+                if not dom.empty:
+                    st.markdown("**Dormant account inactivity distribution**")
+                    # Bucket into ranges
+                    def bucket(d):
+                        if d <= 180:  return "91–180 days"
+                        if d <= 365:  return "181–365 days"
+                        if d <= 730:  return "1–2 years"
+                        return "2+ years"
+                    dom["Range"] = dom["DaysInactive"].apply(bucket)
+                    buckets = dom["Range"].value_counts().reindex(
+                        ["91–180 days","181–365 days","1–2 years","2+ years"], fill_value=0
+                    ).reset_index()
+                    buckets.columns = ["Inactivity range","Count"]
+                    try:
+                        import plotly.graph_objects as go
+                        fig3 = go.Figure(data=[go.Bar(
+                            x=buckets["Inactivity range"].tolist(),
+                            y=buckets["Count"].tolist(),
+                            marker_color=["#F9CB42","#EF9F27","#E24B4A","#A32D2D"],
+                            text=buckets["Count"].tolist(),
+                            textposition="outside",
+                        )])
+                        fig3.update_layout(
+                            height=300, margin=dict(t=30,b=40,l=40,r=20),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(family="Arial",color="#404040"),
+                            yaxis=dict(gridcolor="rgba(0,0,0,0.05)"),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(fig3, use_container_width=True)
+                    except ImportError:
+                        st.bar_chart(buckets.set_index("Inactivity range"))
 
     with tab5:
         st.markdown("#### Audit opinion")
