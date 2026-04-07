@@ -5,10 +5,12 @@ import pandas as pd
 import io
 from datetime import datetime, date, timedelta
 from engine import (
-    run_audit, generate_opinion, generate_claude_opinion,
+    run_audit, generate_opinion, generate_ai_opinion,
     to_excel_bytes, generate_audit_sample, add_sample_sheet,
-    ocr_via_claude, load_sod_matrix,
+    ocr_via_ai, load_sod_matrix,
     extract_text, detect_doc_type, parse_soa_sod_rules,
+    load_rbac_matrix, load_privileged_registry,
+    run_rbac_checks, run_registry_checks,
     sev_order, SOD_RULES,
 )
 from components import render_header, render_sidebar_brand
@@ -98,6 +100,12 @@ def detect_doc_type(f):
         return "jml_procedure"
     if any(k in name for k in ["risk_register","risk register","riskregister"]):
         return "risk_register"
+    if any(k in name for k in ["rbac","role_matrix","role matrix","access_matrix","access matrix","entitlement","permission_matrix"]):
+        return "rbac_matrix"
+    if any(k in name for k in ["privileged","priv_register","priv register","admin_register","privileged_user","privileged user registry"]):
+        return "privileged_registry"
+    if any(k in name for k in ["ual","active_directory","active directory","ad_export","user_access_list","useraccesslist"]):
+        return "system_access"
     if any(k in name for k in ["iso","standard","policy","procedure","framework","gdpr","sox","pci"]):
         return "standard"
     return "other"
@@ -154,21 +162,50 @@ with st.sidebar:
 
     st.divider()
     st.markdown("#### Audit scope")
-    _yr_opts = [today.year-2, today.year-1, today.year]
+    # Year range: current year back to 15 years ago
+    # Supports forensic audits and fraud investigations
+    _yr_opts = list(range(today.year, today.year - 16, -1))
+
+    def _fmt_year(y):
+        if y == today.year:     return f"{y}  — current year"
+        if y == today.year - 1: return f"{y}  — previous year"
+        if y == today.year - 2: return f"{y}  — 2 years ago"
+        return f"{y}  — {today.year - y} years ago"
+
     st.selectbox(
         "Audit year",
-        options=_yr_opts, index=1,
-        format_func=lambda y: f"{y}  ← previous" if y==today.year-1 else (f"{y}  ← current" if y==today.year else str(y)),
+        options=_yr_opts,
+        index=1,
+        format_func=_fmt_year,
         key="audit_year_sel",
+        help="Select any year from the last 15 years. For fraud investigations or historical audits, go as far back as needed."
     )
-    sb1,sb2 = st.columns(2)
+    sb1, sb2 = st.columns(2)
     sb1.button("Full Year",    use_container_width=True, on_click=_set_year, type="primary")
     sb2.button("Last Quarter", use_container_width=True, on_click=_last_q)
     sb1.button("Last 6 Mo.",   use_container_width=True, on_click=_last_6)
     sb2.button("This Month",   use_container_width=True, on_click=_this_month)
-    dc1,dc2 = st.columns(2)
-    with dc1: st.date_input("From", key="ss_start", on_change=_date_chg)
-    with dc2: st.date_input("To",   key="ss_end",   on_change=_date_chg)
+
+    st.caption("Or set a custom date range below for multi-year or specific period audits.")
+    dc1, dc2 = st.columns(2)
+    with dc1:
+        st.date_input(
+            "From",
+            key="ss_start",
+            on_change=_date_chg,
+            min_value=date(today.year - 15, 1, 1),
+            max_value=today,
+            help="Start of audit scope. Can go back up to 15 years for forensic reviews."
+        )
+    with dc2:
+        st.date_input(
+            "To",
+            key="ss_end",
+            on_change=_date_chg,
+            min_value=date(today.year - 15, 1, 2),
+            max_value=today,
+            help="End of audit scope."
+        )
 
     date_err = st.session_state["ss_start"] >= st.session_state["ss_end"]
     if date_err: st.error("From must be before To.")
@@ -240,10 +277,12 @@ if uploaded_files:
         dtype = classified[f.name]
         icon = {"hr_master":"👥","system_access":"💻","soa":"📋",
                 "access_policy":"🔒","jml_procedure":"🔄","risk_register":"⚠️",
+                "rbac_matrix":"🔑","privileged_registry":"🛡️",
                 "standard":"📄","other":"📎"}.get(dtype,"📎")
-        label = {"hr_master":"HR Master","system_access":"System Access",
+        label = {"hr_master":"HR Master","system_access":"System Access / UAL",
                  "soa":"SOA / Standard","access_policy":"Access Policy",
                  "jml_procedure":"JML Procedure","risk_register":"Risk Register",
+                 "rbac_matrix":"RBAC Matrix","privileged_registry":"Privileged User Registry",
                  "standard":"Standard / Policy","other":"Other document"}.get(dtype,"Document")
         det_cols[i % 4].success(f"{icon} {f.name} — {label}")
 
@@ -282,10 +321,10 @@ if uploaded_files:
 
 
 # ── Feature 1: Legacy system / OCR upload ────────────────────────────────────
-with st.expander("📸 Legacy system upload — screenshot or PDF (OCR via Claude Vision)", expanded=False):
+with st.expander("📸 Legacy system upload — screenshot or PDF (AI-powered extraction)", expanded=False):
     st.caption(
         "For old systems that only produce screenshots or PDFs. "
-        "Upload an image or PDF — Claude Vision extracts the account data and converts it to the right format automatically."
+        "Upload an image or PDF — AI extracts the account data and converts it to the right format automatically."
     )
     ocr_file = st.file_uploader(
         "Upload screenshot or PDF of legacy system report",
@@ -295,8 +334,8 @@ with st.expander("📸 Legacy system upload — screenshot or PDF (OCR via Claud
     )
     if ocr_file:
         if st.button("🔍 Extract data from image", type="primary"):
-            with st.spinner("Sending to Claude Vision — extracting account data..."):
-                ocr_df, ocr_err = ocr_via_claude(ocr_file)
+            with st.spinner("Extracting account data from image..."):
+                ocr_df, ocr_err = ocr_via_ai(ocr_file)
             if ocr_err:
                 st.error(f"Extraction failed: {ocr_err}")
             elif ocr_df is not None and not ocr_df.empty:
@@ -323,7 +362,9 @@ st.divider()
 #  Show what the tool extracted from each non-data document
 # ─────────────────────────────────────────────────────────────────────────────
 doc_context   = {}   # {dtype: text}
-soa_sod_extra = {}   # SoD rules extracted from uploaded SOA/policy
+soa_sod_extra   = {}   # SoD rules extracted from uploaded SOA/policy
+rbac_matrix_data = {}   # RBAC Matrix: {JobTitle: [PermittedAccessLevels]}
+registry_df_data = None  # Privileged User Registry DataFrame
 
 if doc_files:
     with st.expander(f"📄 Document intelligence — {len(doc_files)} policy/standard document(s) parsed", expanded=False):
@@ -336,8 +377,28 @@ if doc_files:
             st.markdown(f"**{f.name}** — detected as: *{label}*")
             if text and not text.startswith("["):
                 st.caption(f"Extracted {len(text):,} characters. Findings will reference this document.")
+                # Load RBAC Matrix
+                if dtype == "rbac_matrix":
+                    f.seek(0)
+                    rbac_rules, rbac_err = load_rbac_matrix(f)
+                    if rbac_rules:
+                        rbac_matrix_data.update(rbac_rules)
+                        st.caption(f"RBAC Matrix loaded — {len(rbac_rules)} job role entitlements. Accounts will be checked against permitted access levels.")
+                    elif rbac_err:
+                        st.warning(f"Could not read RBAC Matrix: {rbac_err}")
+
+                # Load Privileged User Registry
+                elif dtype == "privileged_registry":
+                    f.seek(0)
+                    reg_df, reg_err = load_privileged_registry(f)
+                    if reg_df is not None:
+                        registry_df_data = reg_df
+                        st.caption(f"Privileged User Registry loaded — {len(reg_df)} entries. All Admin/privileged accounts will be cross-referenced.")
+                    elif reg_err:
+                        st.warning(f"Could not read Privileged User Registry: {reg_err}")
+
                 # Try to extract SoD rules from SOA or dedicated SoD matrix
-                if dtype in ("soa","access_policy","sod_matrix","other"):
+                elif dtype in ("soa","access_policy","sod_matrix","other"):
                     # First try structured Excel SoD matrix parse
                     if f.name.lower().endswith((".xlsx",".xls")):
                         f.seek(0)
@@ -438,6 +499,8 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
             FUZZY_THRESHOLD, MAX_SYSTEMS,
             selected_fw,
             sod_override=soa_sod_extra if soa_sod_extra else None,
+            rbac_matrix=rbac_matrix_data if rbac_matrix_data else None,
+            registry_df=registry_df_data,
         )
 
     in_scope_n = len(sys_df_f) - excluded_count
@@ -455,12 +518,21 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
 
     # Scope exclusion warning
     if excluded_count == len(sys_df_f) and len(sys_df_f) > 0:
-        st.error(
-            f"⚠️ All {len(sys_df_f):,} accounts were excluded by the scope filter. "
-            f"Your data dates do not fall within **{SCOPE_START.year}**. "
-            f"Use the year selector in the sidebar — try **{today.year - 1}** for last year's data."
-        )
-        st.stop()
+            st.error(
+                f"⚠️ All {len(sys_df_f):,} accounts were excluded by the scope filter. "
+                f"The dates in your System Access file do not fall within "
+                f"**{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}**."
+            )
+            st.markdown("""
+**How to fix this:**
+1. Check what year your data is from — look at the LastLoginDate or AccountCreatedDate columns in your System Access file
+2. Use the **year selector** in the sidebar to match that year
+3. Click **Full Year** then **GO** again
+
+For forensic or historical audits going back several years, select the exact year your data covers.
+The tool supports up to 15 years back.
+            """)
+            st.stop()
 
     # ── RESULTS ──────────────────────────────────────────────────────────────
     st.divider()
@@ -592,32 +664,32 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
         st.markdown("#### Audit opinion")
         oc1, oc2 = st.columns([2,1])
         with oc2:
-            use_claude = st.checkbox(
-                "Use Claude AI to write opinion",
+            use_ai = st.checkbox(
+                "Use AI to generate opinion",
                 value=True,
-                help="Uses the Claude API to write a professional 3-section audit memo. Falls back to rule-based if unavailable."
+                help="Uses AI to write a professional 3-section audit memo. Falls back to rule-based if unavailable."
             )
         with oc1:
-            if use_claude:
-                st.caption("Claude will write a professional audit memo with Executive Summary, Key Findings, and Formal Opinion.")
+            if use_ai:
+                st.caption("AI will write a professional audit memo with Executive Summary, Key Findings, and Formal Opinion.")
             else:
                 st.caption("Rule-based opinion generated from finding counts and severity levels.")
 
-        if use_claude:
-            if st.button("✍️ Generate AI Audit Opinion", type="primary", use_container_width=True):
-                with st.spinner("Claude is writing your audit memo..."):
-                    claude_opinion, success = generate_claude_opinion(
+        if use_ai:
+            if st.button("✍️ Generate Audit Opinion", type="primary", use_container_width=True):
+                with st.spinner("Generating your audit memo..."):
+                    ai_opinion, success = generate_ai_opinion(
                         findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n
                     )
-                if success and claude_opinion:
-                    st.session_state["claude_opinion"] = claude_opinion
+                if success and ai_opinion:
+                    st.session_state["ai_opinion"] = ai_opinion
                 else:
-                    st.warning("Claude API unavailable — showing rule-based opinion instead.")
-                    st.session_state["claude_opinion"] = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
+                    st.warning("AI opinion unavailable — showing rule-based opinion instead.")
+                    st.session_state["ai_opinion"] = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
 
-            if "claude_opinion" in st.session_state:
+            if "ai_opinion" in st.session_state:
                 st.markdown("---")
-                st.markdown(st.session_state["claude_opinion"])
+                st.markdown(st.session_state["ai_opinion"])
                 st.markdown("---")
                 st.caption("⚠️ AI-generated content. Review and edit before any formal use. The responsible auditor must approve this opinion.")
         else:
