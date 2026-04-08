@@ -231,8 +231,10 @@ with st.sidebar:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  DOCUMENT UPLOAD ZONE — single intelligent zone for all documents
+#  HEADER + DOCUMENT UPLOAD ZONE
 # ─────────────────────────────────────────────────────────────────────────────
+render_header()
+
 st.markdown("### 📂 Upload audit documents")
 st.caption(
     "Upload all documents in one place. The tool auto-detects each file by filename. "
@@ -415,6 +417,13 @@ if hr_file and sys_file:
     hr_df  = read_file(hr_file)
     sys_df = read_file(sys_file)
 
+    # Clear findings cache when new files are uploaded
+    if "findings_cache" in st.session_state:
+        del st.session_state["findings_cache"]
+        del st.session_state["excluded_cache"]
+        if "_last_cache_key" in st.session_state:
+            del st.session_state["_last_cache_key"]
+
     # Column validation
     hr_miss  = {"Email","FullName","Department"} - set(hr_df.columns)
     sys_miss = {"Email","AccessLevel"}           - set(sys_df.columns)
@@ -476,18 +485,37 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
         )
         st.stop()
 
-    # Run audit
-    with st.spinner("🔍 Running 15 checks across all identities..."):
-        findings_df, excluded_count = run_audit(
-            hr_df_f, sys_df_f,
-            SCOPE_START, SCOPE_END,
-            DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
-            FUZZY_THRESHOLD, MAX_SYSTEMS,
-            selected_fw,
-            sod_override=soa_sod_extra if soa_sod_extra else None,
-            rbac_matrix=rbac_matrix_data if rbac_matrix_data else None,
-            registry_df=registry_df_data,
-        )
+    # Run audit — with session state caching so tabs don't re-run the engine
+    _cache_key = (
+        len(hr_df_f), len(sys_df_f),
+        str(SCOPE_START), str(SCOPE_END),
+        DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
+        FUZZY_THRESHOLD, MAX_SYSTEMS,
+        tuple(sorted(selected_fw)),
+        len(soa_sod_extra),
+        len(rbac_matrix_data) if rbac_matrix_data else 0,
+        len(registry_df_data) if registry_df_data is not None else 0,
+    )
+
+    if (st.session_state.get("_last_cache_key") != _cache_key or
+            "findings_cache" not in st.session_state):
+        with st.spinner("🔍 Running 18 checks across all identities — this may take a moment for large files..."):
+            findings_df, excluded_count = run_audit(
+                hr_df_f, sys_df_f,
+                SCOPE_START, SCOPE_END,
+                DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
+                FUZZY_THRESHOLD, MAX_SYSTEMS,
+                selected_fw,
+                sod_override=soa_sod_extra if soa_sod_extra else None,
+                rbac_matrix=rbac_matrix_data if rbac_matrix_data else None,
+                registry_df=registry_df_data,
+            )
+        st.session_state["findings_cache"]  = findings_df
+        st.session_state["excluded_cache"]  = excluded_count
+        st.session_state["_last_cache_key"] = _cache_key
+    else:
+        findings_df    = st.session_state["findings_cache"]
+        excluded_count = st.session_state["excluded_cache"]
 
     in_scope_n = len(sys_df_f) - excluded_count
     total = len(findings_df)
@@ -573,26 +601,84 @@ The tool supports up to 15 years back.
     sdf = sdf.sort_values("_o").drop(columns="_o")
 
     with tab1:
-        t1a,t1b = st.columns([3,1])
+        t1a, t1b, t1c = st.columns([3, 1, 1])
         with t1a:
-            ft = st.multiselect("Issue type", options=sorted(findings_df["IssueType"].unique()),
-                                default=sorted(findings_df["IssueType"].unique()))
+            ft = st.multiselect(
+                "Issue type",
+                options=sorted(findings_df["IssueType"].unique()),
+                default=sorted(findings_df["IssueType"].unique()),
+                key="ft_filter",
+            )
         with t1b:
-            sf = st.selectbox("Severity", ["All","🔴 CRITICAL","🟠 HIGH","🟡 MEDIUM"])
+            sf = st.selectbox("Severity", ["All","🔴 CRITICAL","🟠 HIGH","🟡 MEDIUM"], key="sev_filter")
+        with t1c:
+            dept_opts = ["All"] + sorted(findings_df["Department"].dropna().unique().tolist())
+            df_filter = st.selectbox("Department", dept_opts, key="dept_filter")
+
         filtered = sdf[sdf["IssueType"].isin(ft)]
-        if sf != "All": filtered = filtered[filtered["Severity"]==sf]
-        disp = [c for c in ["Severity","IssueType","Email","FullName","Department",
-                             "AccessLevel","DaysInactive","DaysPostTermination","Detail"]
-                if c in filtered.columns]
-        st.dataframe(filtered[disp], use_container_width=True, hide_index=True, height=420,
+        if sf != "All":
+            filtered = filtered[filtered["Severity"] == sf]
+        if df_filter != "All":
+            filtered = filtered[filtered["Department"] == df_filter]
+
+        st.caption(f"Showing {len(filtered):,} of {total:,} findings — click any row to expand details")
+
+        # ── Collapsed summary table — fast to render ──────────────────────────
+        # Show only key columns — no heavy text columns
+        summary_cols = [c for c in ["Severity","IssueType","Email","FullName","Department","AccessLevel"]
+                        if c in filtered.columns]
+        st.dataframe(
+            filtered[summary_cols].reset_index(drop=True),
+            use_container_width=True,
+            hide_index=True,
+            height=min(400, 45 + len(filtered) * 35),
             column_config={
-                "Severity":            st.column_config.TextColumn("Severity",       width="small"),
-                "IssueType":           st.column_config.TextColumn("Issue Type",     width="medium"),
-                "Detail":              st.column_config.TextColumn("Detail",         width="large"),
-                "DaysInactive":        st.column_config.NumberColumn("Days Idle",    width="small"),
-                "DaysPostTermination": st.column_config.NumberColumn("Post-Term",    width="small"),
-            })
-        st.caption(f"Showing {len(filtered):,} of {total:,} findings")
+                "Severity":   st.column_config.TextColumn("Severity",    width="small"),
+                "IssueType":  st.column_config.TextColumn("Issue",       width="medium"),
+                "Email":      st.column_config.TextColumn("Email",       width="medium"),
+                "FullName":   st.column_config.TextColumn("Name",        width="small"),
+                "Department": st.column_config.TextColumn("Department",  width="small"),
+                "AccessLevel":st.column_config.TextColumn("Access",      width="small"),
+            }
+        )
+
+        # ── Expandable detail per finding ─────────────────────────────────────
+        st.markdown("#### Finding details")
+        st.caption("Expand any finding to see the full detail, risk statement and remediation steps.")
+
+        # Show max 100 at a time to prevent crashes
+        MAX_EXPAND = 100
+        show_df = filtered.head(MAX_EXPAND)
+        if len(filtered) > MAX_EXPAND:
+            st.warning(f"Showing first {MAX_EXPAND} of {len(filtered):,} findings. Use the filters above to narrow down.")
+
+        for _, row in show_df.iterrows():
+            sev   = str(row.get("Severity",""))
+            itype = str(row.get("IssueType",""))
+            email = str(row.get("Email",""))
+            dept  = str(row.get("Department",""))
+            ico   = "🔴" if "CRITICAL" in sev else ("🟠" if "HIGH" in sev else "🟡")
+            label = f"{ico} {itype} — {email} | {dept}"
+            with st.expander(label, expanded=False):
+                d1, d2 = st.columns([2, 1])
+                with d1:
+                    st.markdown(f"**Finding:** {row.get('Detail','')}")
+                    if row.get('Risk'):
+                        st.markdown(f"**Risk:** {row.get('Risk','')}")
+                with d2:
+                    st.markdown(f"**Access level:** `{row.get('AccessLevel','')}`")
+                    if row.get('JobTitle'):
+                        st.markdown(f"**Job title:** `{row.get('JobTitle','')}`")
+                    if row.get('DaysInactive'):
+                        st.markdown(f"**Days inactive:** `{int(row.get('DaysInactive',0))}`")
+                    if row.get('DaysPostTermination'):
+                        st.markdown(f"**Days post-term:** `{int(row.get('DaysPostTermination',0))}`")
+                fw_refs = []
+                for fw_col in ["SOX Reference","ISO 27001 Ref","GDPR Reference","PCI-DSS Reference"]:
+                    if row.get(fw_col):
+                        fw_refs.append(f"`{row.get(fw_col)}`")
+                if fw_refs:
+                    st.markdown("**Framework refs:** " + " · ".join(fw_refs))
 
     with tab2:
         sev_opts = ["All severities"]+sorted(sdf["Severity"].unique(), key=sev_order)
