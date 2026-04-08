@@ -669,10 +669,18 @@ The tool supports up to 15 years back.
                     st.markdown(f"**Access level:** `{row.get('AccessLevel','')}`")
                     if row.get('JobTitle'):
                         st.markdown(f"**Job title:** `{row.get('JobTitle','')}`")
-                    if row.get('DaysInactive'):
-                        st.markdown(f"**Days inactive:** `{int(row.get('DaysInactive',0))}`")
-                    if row.get('DaysPostTermination'):
-                        st.markdown(f"**Days post-term:** `{int(row.get('DaysPostTermination',0))}`")
+                    _di = row.get('DaysInactive')
+                    try:
+                        if _di is not None and str(_di).lower() not in ('nan','none','') and float(_di) > 0:
+                            st.markdown(f"**Days inactive:** `{int(float(_di))}`")
+                    except (ValueError, TypeError):
+                        pass
+                    _dp = row.get('DaysPostTermination')
+                    try:
+                        if _dp is not None and str(_dp).lower() not in ('nan','none','') and float(_dp) > 0:
+                            st.markdown(f"**Days post-term:** `{int(float(_dp))}`")
+                    except (ValueError, TypeError):
+                        pass
                 fw_refs = []
                 for fw_col in ["SOX Reference","ISO 27001 Ref","GDPR Reference","PCI-DSS Reference"]:
                     if row.get(fw_col):
