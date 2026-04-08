@@ -176,6 +176,32 @@ def make_finding(row_dict, issue_type, detail, days_inactive=None,
     }
     if post_term_days is not None:
         f["DaysPostTermination"] = post_term_days
+    # Ensure AuditFlag and Notes are always populated — never blank on a flagged row
+    if not f.get("AuditFlag") or str(f.get("AuditFlag","")).lower() in ("","nan","none"):
+        # Map issue type to audit flag code
+        flag_map = {
+            "Orphaned Account":                        "ORPHANED",
+            "Terminated Employee with Active Account": "TERMINATED_ACTIVE",
+            "Post-Termination Login":                  "POST_TERM_LOGIN",
+            "Toxic Access (SoD Violation)":            "SOD_VIOLATION",
+            "RBAC Violation":                          "RBAC_VIOLATION",
+            "Dormant Account":                         "DORMANT",
+            "Privilege Creep":                         "PRIVILEGE_CREEP",
+            "Shared / Generic Account":                "GENERIC",
+            "Super-User / Admin Access":               "SUPERUSER",
+            "MFA Not Enabled":                         "MFA_DISABLED",
+            "Contractor Without Expiry Date":          "CONTRACTOR_NO_EXPIRY",
+            "Service / System Account":                "SERVICE_ACCOUNT",
+            "Password Never Expired":                  "PWD_EXPIRED",
+            "Duplicate System Access":                 "DUPLICATE",
+            "Excessive Multi-System Access":           "EXCESS_SYSTEMS",
+            "Near-Match Email":                        "NEAR_MATCH",
+            "Unauthorised Privileged Account":         "UNAUTH_PRIV",
+            "Privileged Account Review Overdue":       "REGISTRY_OVERDUE",
+        }
+        f["AuditFlag"] = flag_map.get(issue_type, issue_type.upper().replace(" ","_")[:20])
+    if not f.get("Notes") or str(f.get("Notes","")).lower() in ("","nan","none"):
+        f["Notes"] = detail[:120] if detail else f"Flagged: {issue_type}"
     # Only include framework refs that were selected
     fw = selected_fw or []
     if "SOX"     in fw: f["SOX Reference"]     = refs.get("SOX",       "")
@@ -1033,16 +1059,18 @@ def load_rbac_matrix(uploaded_file):
         df = pd.read_excel(uploaded_file)
         df.columns = df.columns.str.strip()
 
-        # Flexible column detection
+        # Flexible column detection — handles both JobTitle and FullName columns
         title_col  = next((c for c in df.columns if any(k in c.lower() for k in
-                           ["job","title","role","position","designation"])), None)
+                           ["job","title","role","position","designation",
+                            "name","fullname","full_name","employee","user"])), None)
         access_col = next((c for c in df.columns if any(k in c.lower() for k in
-                           ["permitted","access","level","entitlement","right"])), None)
+                           ["permitted","access","level","entitlement","right",
+                            "permission","allow","grant"])), None)
         system_col = next((c for c in df.columns if any(k in c.lower() for k in
                            ["system","application","app","platform"])), None)
 
         if not title_col or not access_col:
-            return {}, f"Could not detect JobTitle and PermittedAccess columns. Found: {list(df.columns)}"
+            return {}, f"Could not detect JobTitle/Name and PermittedAccess columns. Found: {list(df.columns)}"
 
         matrix = {}
         for _, row in df.iterrows():
