@@ -13,6 +13,771 @@ PASSWORD_EXPIRY_DAYS = 90
 FUZZY_THRESHOLD      = 88
 MAX_SYSTEMS          = 3
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SEMANTIC INTELLIGENCE — department and access level normalisation
+#  Maps real-world naming variations to canonical forms used in rules.
+#  Add new variations here as you encounter them from client data.
+# ─────────────────────────────────────────────────────────────────────────────
+
+DEPT_SYNONYMS = {
+
+    # ── FINANCE ──────────────────────────────────────────────────────────────
+    "Finance": [
+        # Core names
+        "finance","finance department","finance dept","finance team",
+        "finance division","finance function","finance group","finance unit",
+        "finance & accounting","finance and accounting","finance/accounting",
+        "financial","financial department","financial services",
+        "financial management","financial operations","financial control",
+        "financial controller","financial controllers","financial reporting",
+        "financial planning","financial planning & analysis",
+        "financial planning and analysis","fp&a","fpa",
+        # Accounting variations
+        "accounting","accounting department","accounts","accounts department",
+        "accounts team","accounts division","accountancy","accountants",
+        "accounts & finance","accounts and finance","finance & accounts",
+        # Specific sub-functions
+        "accounts payable","ap","accounts payable department","ap team",
+        "accounts receivable","ar","accounts receivable department","ar team",
+        "payroll","payroll department","payroll team","payroll & benefits",
+        "payroll and benefits","salary","salaries","compensation",
+        "compensation & benefits","compensation and benefits","c&b","cb",
+        "total rewards","total reward","benefits","benefits administration",
+        "treasury","treasury department","treasury management","treasury team",
+        "treasury & cash management","cash management","liquidity management",
+        "tax","taxation","tax department","tax team","indirect tax","direct tax",
+        "vat","corporate tax","transfer pricing",
+        "audit","internal audit","internal audit department","audit team",
+        "finance audit","financial audit","external audit liaison",
+        "management accounts","management accounting","cost accounting",
+        "cost control","cost management","budgeting","budget","budgets",
+        "planning","planning & budgeting","planning and budgeting",
+        "forecasting","commercial finance","commercial","business finance",
+        "group finance","central finance","group accounting",
+        "shared services","shared services finance","finance shared services",
+        "finance ops","finance operations","finance & operations",
+        "billing","billing department","billing team","collections",
+        "credit control","credit management","revenue","revenue accounting",
+        "revenue recognition","statutory reporting","group reporting",
+        "investor relations","finance business partner","finance bp",
+        "gl","general ledger","fixed assets","asset management finance",
+        "intercompany","reconciliation","financial risk","credit risk finance",
+        # ERP system names often used as dept
+        "sap finance","oracle finance","netsuite","sage","xero","quickbooks",
+        "dynamics finance","d365 finance",
+    ],
+
+    # ── INFORMATION TECHNOLOGY ────────────────────────────────────────────────
+    "IT": [
+        # Core IT names
+        "it","it department","it dept","it team","it division",
+        "it function","it group","it services","it service",
+        "information technology","information technology department",
+        "information technology services","information technology division",
+        "information systems","is","mis","management information systems",
+        "technology","technology department","technology services",
+        "technology team","technology division","technology group",
+        "tech","tech team","tech department","tech services","tech division",
+        # Operations
+        "it operations","it ops","it operations & support","ito",
+        "infrastructure","infrastructure & operations","i&o",
+        "it infrastructure","infrastructure team","infrastructure department",
+        "network","networking","network team","network & infrastructure",
+        "network operations","noc","network operations centre",
+        "systems","systems team","systems administration","sysadmin",
+        "it support","support team","technical support","tech support",
+        "helpdesk","help desk","service desk","it service desk","itsm",
+        "end user computing","euc","desktop support","deskside support",
+        # Development
+        "software development","software engineering","development",
+        "it development","application development","app development",
+        "software","software team","engineering","it engineering",
+        "devops","dev ops","development operations","platform",
+        "platform engineering","platform team","sre","site reliability",
+        "site reliability engineering","cloud","cloud team","cloud services",
+        "cloud operations","cloud & devops","cloud engineering",
+        "backend","frontend","full stack","mobile development","mobile",
+        # Security
+        "security","it security","information security","infosec",
+        "cyber","cyber security","cybersecurity","it security team",
+        "security operations","soc","security operations centre",
+        "vulnerability management","penetration testing","pen test",
+        "identity & access management","iam","identity management",
+        "privileged access management","pam","endpoint security",
+        "security engineering","security architecture","ciso office",
+        # Architecture and strategy
+        "architecture","it architecture","enterprise architecture","ea",
+        "solution architecture","technical architecture",
+        "it strategy","digital strategy","technology strategy",
+        "digital","digital team","digital services","digital transformation",
+        "digital & technology","digital and technology","d&t","dt",
+        # Data infrastructure
+        "data engineering","data infrastructure","data platform",
+        "bi","business intelligence","data warehouse","datawarehouse",
+        "etl","data integration","reporting & analytics it",
+        # Other IT
+        "it procurement","software licensing","asset management it",
+        "it asset management","itam","change management it",
+        "release management","it project management","it pmo",
+        "vendor management it","it vendor management",
+        "it governance","it compliance","it risk","grc it",
+    ],
+
+    # ── HUMAN RESOURCES ───────────────────────────────────────────────────────
+    "HR": [
+        # Core HR names
+        "hr","hr department","hr dept","hr team","hr division",
+        "hr function","hr group","human resources","human resources department",
+        "human resources team","human resources division",
+        "human resource","human resource department",
+        "people","people team","people department","people division",
+        "people function","people & culture","people and culture",
+        "people operations","people ops","people & organisation",
+        "people and organisation","people & organizational development",
+        # Talent and recruitment
+        "talent","talent team","talent management","talent acquisition",
+        "talent & development","talent and development",
+        "recruitment","recruitment team","recruitment department",
+        "resourcing","resourcing team","talent resourcing",
+        "staffing","staffing team","workforce","workforce planning",
+        "headcount","headcount planning",
+        # Learning and development
+        "learning & development","learning and development","l&d","ld",
+        "learning","learning team","training","training department",
+        "training & development","training and development","t&d","td",
+        "organisational development","organizational development","od",
+        "organisation development","leadership development",
+        "capability development","people development","talent development",
+        # Employee relations and experience
+        "employee relations","er","employment relations",
+        "employee experience","employee engagement","engagement",
+        "culture","culture team","dei","diversity equity inclusion",
+        "diversity & inclusion","diversity and inclusion","d&i",
+        "wellbeing","employee wellbeing","wellness","health & wellbeing",
+        # HR operations
+        "hr operations","hr ops","hris","hr information systems",
+        "hrms","hr management systems","hr shared services",
+        "people analytics","hr analytics","workforce analytics",
+        "compensation & benefits","compensation and benefits","c&b","cb",
+        "total rewards","total reward","benefits","benefits administration",
+        "payroll","payroll team","payroll department",
+        "hr business partner","hrbp","hr bp","business partner hr",
+        "hr generalist","generalist hr",
+        # Compliance
+        "hr compliance","employment law","er legal","hr legal",
+        "immigration","visa","right to work",
+    ],
+
+    # ── SALES ─────────────────────────────────────────────────────────────────
+    "Sales": [
+        # Core sales
+        "sales","sales department","sales team","sales division",
+        "sales function","sales group","sales & marketing",
+        "sales and marketing","commercial","commercial team",
+        "commercial department","commercial division",
+        "business development","bd","biz dev","business dev",
+        # Inside and field
+        "inside sales","inside sales team","field sales","field sales team",
+        "direct sales","indirect sales","outbound sales","inbound sales",
+        "telesales","telephone sales","digital sales","online sales",
+        "e-commerce sales","ecommerce sales",
+        # Enterprise and segments
+        "enterprise sales","enterprise team","mid-market sales",
+        "smb sales","small business sales","corporate sales",
+        "strategic sales","national accounts","national sales",
+        "regional sales","regional team","territory sales",
+        "international sales","global sales","export sales",
+        # Account management
+        "account management","account managers","key accounts",
+        "key account management","strategic accounts","named accounts",
+        "global accounts","major accounts","national accounts",
+        # Revenue and growth
+        "revenue","revenue team","revenue operations","revops","rev ops",
+        "go to market","gtm","growth","growth team",
+        "new business","new business development","new logo",
+        # Channel and partnerships
+        "channel","channel sales","channel team","channel management",
+        "partner","partners","partnerships","alliance","alliances",
+        "partner management","channel & alliances",
+        "reseller","resellers","distributor","distribution",
+        # Pre-sales
+        "pre-sales","presales","pre sales","solution consulting",
+        "sales engineering","sales engineers","technical sales",
+        "solutions","solutions team",
+    ],
+
+    # ── MARKETING ─────────────────────────────────────────────────────────────
+    "Marketing": [
+        # Core marketing
+        "marketing","marketing department","marketing team","marketing division",
+        "marketing function","marketing group","marketing & comms",
+        "marketing and communications","marketing & communications",
+        "brand","brand team","brand marketing","brand management",
+        "brand & marketing","branding","brand & comms",
+        # Digital marketing
+        "digital marketing","digital marketing team","online marketing",
+        "performance marketing","growth marketing","d2c marketing",
+        "paid media","paid search","ppc","sem","seo","organic search",
+        "social media","social media marketing","social","community",
+        "community management","influencer","influencer marketing",
+        "affiliate","affiliate marketing","programmatic","display advertising",
+        # Content and creative
+        "content","content team","content marketing","content strategy",
+        "creative","creative team","creative services","design",
+        "graphic design","brand design","marketing design",
+        "copywriting","copy","editorial","publications",
+        "video","video production","studio","production",
+        # Communications
+        "communications","comms","corporate communications","corp comms",
+        "pr","public relations","media relations","press","press office",
+        "external communications","internal communications",
+        "investor communications","stakeholder communications",
+        "events","events team","event management","conferences",
+        "experiential","field marketing",
+        # Product marketing
+        "product marketing","pmm","product marketing management",
+        "go to market marketing","gtm marketing","launch",
+        # Demand generation
+        "demand generation","demand gen","lead generation","lead gen",
+        "campaigns","campaign management","campaign team",
+        "marketing operations","marketing ops","mops","marops",
+        "crm marketing","lifecycle marketing","retention marketing",
+        "email marketing","marketing automation",
+    ],
+
+    # ── OPERATIONS ────────────────────────────────────────────────────────────
+    "Operations": [
+        # Core operations
+        "operations","ops","operations department","operations team",
+        "operations division","business operations","biz ops","bizops",
+        "operational","operational excellence","ops excellence",
+        # Supply chain
+        "supply chain","supply chain management","scm","supply chain team",
+        "supply chain & operations","procurement & operations",
+        "demand planning","supply planning","inventory","inventory management",
+        "stock management","materials management","materials",
+        # Logistics
+        "logistics","logistics team","logistics department","logistics & ops",
+        "logistics & operations","logistics and operations",
+        "distribution","distribution centre","dc","warehouse",
+        "warehousing","warehouse operations","fulfillment","fulfilment",
+        "dispatch","shipping","transport","transportation","fleet",
+        "fleet management","fleet operations","last mile","delivery",
+        # Manufacturing
+        "manufacturing","manufacturing operations","production","production team",
+        "production operations","assembly","assembly operations","plant",
+        "plant operations","factory","factory operations","workshop",
+        "fabrication","process engineering","manufacturing engineering",
+        # Quality
+        "quality","quality assurance","qa","quality control","qc",
+        "quality management","quality operations","testing","test",
+        "quality & safety","hseq","health safety environment quality",
+        # Facilities and property
+        "facilities","facilities management","facilities team","fm",
+        "property","property management","real estate","estates",
+        "building management","office management","workplace",
+        "workplace services","workspace","environment","site management",
+        # Continuous improvement
+        "continuous improvement","ci","lean","lean operations","six sigma",
+        "process improvement","process excellence","transformation",
+        "operational transformation","business transformation","change",
+        # Field operations
+        "field operations","field ops","field services","field service",
+        "field engineering","installation","maintenance","technical operations",
+    ],
+
+    # ── PROCUREMENT ───────────────────────────────────────────────────────────
+    "Procurement": [
+        # Core procurement
+        "procurement","procurement department","procurement team",
+        "procurement division","procurement function","procurement group",
+        "purchasing","purchasing department","purchasing team","buying",
+        "buying team","buyers","commercial procurement",
+        # Sourcing
+        "sourcing","strategic sourcing","sourcing team","sourcing & procurement",
+        "category management","category","categories","category team",
+        "indirect procurement","direct procurement","global procurement",
+        # Supply management
+        "supply management","supplier management","vendor management",
+        "supply base management","third party management","tpm",
+        # Contracts
+        "contracts","contracts management","contract management",
+        "contract administration","commercial contracts",
+        "procurement & contracts","procurement and contracts",
+        # Procure to pay
+        "p2p","procure to pay","purchase to pay","p2p team",
+        "invoice processing","purchase orders","po management",
+        # Spend management
+        "spend management","spend analysis","spend analytics",
+        "cost reduction","savings","procurement savings",
+        # Other
+        "logistics procurement","it procurement","capex procurement",
+        "facilities procurement","services procurement",
+    ],
+
+    # ── LEGAL ─────────────────────────────────────────────────────────────────
+    "Legal": [
+        # Core legal
+        "legal","legal department","legal team","legal division",
+        "legal function","legal group","legal services","legal & compliance",
+        "legal and compliance","general counsel","gc","office of general counsel",
+        "ogc","legal counsel","in-house legal","corporate legal",
+        # Legal sub-functions
+        "contracts","contract management","commercial contracts legal",
+        "company secretarial","company secretary","secretarial","cosec",
+        "corporate secretarial","board secretariat","governance secretarial",
+        "corporate law","corporate affairs","corporate governance",
+        "litigation","dispute resolution","employment law","labour law",
+        "intellectual property","ip","ip management","ip team",
+        "trademarks","patents","copyright","licensing legal",
+        "privacy","data privacy","data protection legal","gdpr legal",
+        # Regulatory
+        "regulatory","regulatory affairs","regulatory team","regulatory legal",
+        "regulatory compliance legal","competition law","antitrust",
+        # M&A and finance legal
+        "mergers & acquisitions","m&a","deal team","corporate transactions",
+        "legal ops","legal operations","legal technology","legal tech",
+        "commercial legal","legal commercial","real estate legal",
+        "property legal","planning","planning legal",
+    ],
+
+    # ── RISK & COMPLIANCE ─────────────────────────────────────────────────────
+    "Risk & Compliance": [
+        # Core risk
+        "risk","risk management","risk department","risk team",
+        "risk division","risk function","risk & compliance",
+        "risk and compliance","enterprise risk","enterprise risk management",
+        "erm","operational risk","operational risk management","orm",
+        "credit risk","market risk","liquidity risk","financial risk management",
+        "model risk","technology risk","cyber risk","third party risk",
+        "vendor risk","supply chain risk","strategic risk",
+        # Compliance
+        "compliance","compliance department","compliance team",
+        "compliance division","compliance function","regulatory compliance",
+        "compliance & risk","compliance and risk","compliance management",
+        # GRC
+        "grc","governance risk compliance","governance risk and compliance",
+        "governance, risk and compliance","governance risk & compliance",
+        "governance","governance team","corporate governance",
+        "internal controls","controls","controls team","sox",
+        "sox compliance","sox controls","j-sox","financial controls",
+        # Internal audit
+        "internal audit","internal audit department","internal audit team",
+        "ia","group internal audit","audit & risk","audit and risk",
+        "assurance","internal assurance","risk & assurance",
+        "risk and assurance","combined assurance",
+        # Financial crime
+        "aml","anti money laundering","financial crime","fraud",
+        "fraud prevention","fraud risk","fraud & financial crime",
+        "kyc","know your customer","sanctions","financial intelligence",
+        "counter fraud","economic crime",
+        # Regulatory
+        "regulatory affairs","regulatory","regulatory risk",
+        "conduct risk","compliance monitoring","compliance testing",
+        "data protection","dpo office","privacy","ciso",
+        "information risk","information governance",
+    ],
+
+    # ── CUSTOMER SUPPORT ──────────────────────────────────────────────────────
+    "Support": [
+        # Core support
+        "support","customer support","customer service","client services",
+        "client support","customer care","customer relations",
+        "customer experience","cx","customer experience team",
+        "contact centre","contact center","call centre","call center",
+        "customer contact","customer operations","customer ops",
+        # Technical support
+        "technical support","tech support","helpdesk","help desk",
+        "it helpdesk","service desk","it service desk","1st line support",
+        "2nd line support","3rd line support","first line","second line",
+        "third line","l1","l2","l3","level 1","level 2","level 3",
+        # Customer success
+        "customer success","cs","customer success team",
+        "customer success management","csm","client success",
+        "account management support","post-sales",
+        # Onboarding
+        "onboarding","customer onboarding","client onboarding",
+        "implementation","implementations","professional services",
+        "ps","customer implementation","solution implementation",
+        # After sales
+        "after sales","after-sales","aftersales","field service support",
+        "warranty","returns","repairs","service centre","service center",
+        # Complaints
+        "complaints","complaints handling","dispute resolution support",
+        "escalations","customer escalations",
+    ],
+
+    # ── ENGINEERING & PRODUCT ─────────────────────────────────────────────────
+    "Engineering": [
+        "engineering","software engineering","software development",
+        "development","r&d","research and development","research & development",
+        "technology engineering","tech engineering","it engineering",
+        "backend","backend engineering","backend development",
+        "frontend","frontend engineering","frontend development",
+        "full stack","full stack engineering","full stack development",
+        "mobile","mobile engineering","mobile development","ios","android",
+        "qa engineering","test engineering","quality engineering","sdet",
+        "data engineering","data platform engineering",
+        "ml engineering","machine learning engineering","ai engineering",
+        "platform","platform engineering","infrastructure engineering",
+        "devops","devsecops","sre","site reliability engineering",
+        "cloud engineering","cloud native","solutions engineering",
+        "integration","integration engineering","api","api development",
+        "architecture","software architecture","technical architecture",
+        "embedded","embedded systems","hardware engineering","firmware",
+        "iot","internet of things engineering",
+    ],
+
+    "Product": [
+        "product","product management","product team","product department",
+        "product division","product group","product & engineering",
+        "product and engineering","product & design","product and design",
+        "product & ux","product & technology","product strategy",
+        "product operations","product ops","product development",
+        "ux","user experience","ui","user interface","ux/ui","ui/ux",
+        "design","design team","product design","experience design",
+        "service design","interaction design","visual design",
+        "product owner","product owners","business analysis","ba",
+        "business analyst","business analysts","requirements",
+        "digital product","digital product management",
+    ],
+
+    "Data & Analytics": [
+        "data","data team","data department","data division",
+        "data & analytics","data and analytics","analytics",
+        "analytics team","analytics department","business analytics",
+        "business intelligence","bi","bi team","reporting",
+        "reporting & analytics","data science","data scientists",
+        "data engineering","data platform","data infrastructure",
+        "data management","data governance","data quality",
+        "data strategy","chief data office","cdo office",
+        "insights","insights team","customer insights","market insights",
+        "consumer insights","research","market research",
+        "advanced analytics","predictive analytics","ml","machine learning",
+        "ai","artificial intelligence","ai & ml","decision science",
+        "decision intelligence","applied science","quantitative",
+    ],
+
+    "Executive": [
+        "executive","c-suite","c suite","leadership","senior leadership",
+        "executive leadership","executive team","exec team","exec",
+        "board","board of directors","directors","senior management",
+        "management","management team","senior management team","smt",
+        "managing directors","executive directors","group executive",
+        "ceo office","ceo's office","president","president office",
+        "chairman","chairman office","group","group management",
+        "corporate","corporate office","headquarters","hq",
+        "c-level","c level","office of the ceo","office of the cfo",
+        "group leadership","global leadership","global management",
+    ],
+
+    # ── ADDITIONAL DEPARTMENTS COMMON IN LARGER ORGANISATIONS ────────────────
+    "Customer Success": [
+        "customer success","cs department","customer success team",
+        "customer success management","client success","account success",
+        "partner success","customer growth","customer retention",
+        "renewal","renewals","renewal management","expansion",
+        "upsell","cross-sell","post-sales success",
+    ],
+
+    "Project Management": [
+        "project management","pmo","project management office",
+        "programme management","program management","portfolio management",
+        "project office","project delivery","delivery","delivery management",
+        "project team","project managers","programme office",
+        "change delivery","transformation delivery","it pmo",
+    ],
+
+    "Admin": [
+        "admin","administration","administrative","administration department",
+        "administrative services","office administration","office management",
+        "pa","personal assistant","executive assistant","ea",
+        "business support","business support services","admin & support",
+        "corporate services","company administration","reception",
+        "secretarial","office services","general administration",
+    ],
+
+    "Research": [
+        "research","r&d","research and development","research & development",
+        "innovation","innovation team","innovation lab","lab","laboratories",
+        "scientific","science","clinical","clinical research","clinical trials",
+        "regulatory affairs research","medical affairs","medical",
+        "drug development","product research","market research research",
+    ],
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  ACCESS LEVEL SYNONYMS — maps every known variation to canonical form
+# ─────────────────────────────────────────────────────────────────────────────
+ACCESS_SYNONYMS = {
+    "Admin": [
+        # Direct admin terms
+        "admin","administrator","administration access","system admin",
+        "sysadmin","sys admin","system administrator","it admin",
+        "local admin","domain admin","global admin","full admin",
+        "super admin","superadmin","super administrator",
+        "admin access","administrative access","administrative rights",
+        "admin rights","admin privileges","administrative privileges",
+        # Root / elevated
+        "root","root access","superuser","super user","su",
+        "elevated","elevated access","elevated privileges",
+        "privileged","privileged access","privileged user",
+        # Full control
+        "fullcontrol","full control","full access","all access",
+        "unrestricted","unrestricted access","complete access",
+        "all permissions","all rights","everything",
+        "owner","resource owner","object owner",
+        # Platform specific
+        "global administrator","tenant admin","org admin",
+        "enterprise admin","azure admin","aws admin",
+        "cloud admin","platform admin","infrastructure admin",
+        "application admin","app admin","system owner",
+    ],
+
+    "DBAdmin": [
+        "dbadmin","dba","db admin","database admin","database administrator",
+        "database administration","sql admin","sql server admin",
+        "oracle dba","oracle admin","postgres admin","postgresql admin",
+        "mysql admin","mongodb admin","db owner","database owner",
+        "schema owner","schema admin","data admin","data administrator",
+        "warehouse admin","datawarehouse admin","db2 admin","sybase admin",
+        "nosql admin","redis admin","elasticsearch admin","database access",
+    ],
+
+    "Finance": [
+        "finance","finance access","financial","financial access",
+        "accounts","accounting","accounting access","accounts access",
+        "payroll","payroll access","payment","payments","payment access",
+        "general ledger","gl","gl access","ap access","ar access",
+        "purchase ledger","sales ledger","erp finance","sap","sap finance",
+        "sap access","oracle financials","oracle finance","netsuite",
+        "sage","xero","quickbooks","dynamics finance","d365",
+        "billing","billing access","invoicing","invoice access",
+        "collections","treasury access","budgeting access",
+    ],
+
+    "HR": [
+        "hr","hr access","human resources access","hris","hrms",
+        "hris access","hrms access","workday","workday access",
+        "oracle hr","sap hr","successfactors","bamboo hr","bamboohr",
+        "people system","people access","payroll hr","recruitment access",
+        "talent system","ats","applicant tracking","learning system",
+        "lms access","performance system","hr portal",
+    ],
+
+    "ReadOnly": [
+        "readonly","read only","read-only","read","view","view only",
+        "view access","read access","viewer","viewers","observer",
+        "monitor","monitoring","reporting","report","reports",
+        "read & view","read and view","enquiry","enquiry only",
+        "query only","query","browse","browse only","lookup",
+        "lookup only","basic","basic access","standard read",
+        "limited","limited access","restricted","restricted access",
+        "no write","no edit","consume","consume only",
+        "auditor","auditor access","audit read","compliance read",
+    ],
+
+    "Full Access": [
+        "full access","full","complete","complete access",
+        "unrestricted","all features","all functionality",
+        "power user","advanced","advanced access","super user access",
+        "manager access","manager level","management access",
+        "senior access","full permissions","all permissions",
+        "full read write","read write execute","rwx",
+        "contributor","contribute","read write","read/write",
+    ],
+
+    "CRM": [
+        "crm","crm access","salesforce","salesforce access","dynamics crm",
+        "dynamics 365","d365 crm","hubspot","hubspot access","zoho crm",
+        "customer","customer access","sales access","sales system",
+        "account management access","pipeline access","opportunity access",
+        "contact management","lead management","crm user","sfdc",
+    ],
+
+    "Support": [
+        "support","support access","helpdesk","help desk","service desk",
+        "itsm","servicenow","jira service","jira sd","zendesk",
+        "freshdesk","freshservice","customer support access",
+        "ticket","ticketing","ticketing system","incident management",
+        "change management access","problem management","cmdb access",
+    ],
+
+    "Engineering": [
+        "engineering","developer","development","dev","devops",
+        "git","github","gitlab","bitbucket","azure devops",
+        "code","coding","repository","repo","source control",
+        "deploy","deployment","cicd","ci/cd","pipeline",
+        "aws","azure","gcp","cloud access","infrastructure access",
+        "kubernetes","k8s","docker","container","container access",
+        "jira","confluence","atlassian","monitoring access",
+        "logging access","observability","release","release management",
+    ],
+
+    "Product": [
+        "product","product access","product management access",
+        "product tool","product analytics","mixpanel","amplitude",
+        "pendo","product board","productboard","roadmap",
+        "jira product","backlog","sprint","agile tools",
+    ],
+
+    "Marketing": [
+        "marketing","marketing access","marketing tools","marketing system",
+        "cms","content management","content management system",
+        "marketing automation","hubspot marketing","marketo","pardot",
+        "mailchimp","campaign access","social media tools","hootsuite",
+        "google analytics","analytics access","marketing analytics",
+        "seo tools","sem tools","advertising access","ad platform",
+        "google ads","facebook ads","linkedin ads",
+    ],
+
+    "Compliance": [
+        "compliance","compliance access","grc","grc access","grc tool",
+        "risk","risk access","risk management access","audit access",
+        "compliance management","regulatory","regulatory access",
+        "policy management","policy access","sox compliance access",
+        "archer","servicenow grc","metricstream","compliance portal",
+    ],
+
+    "Legal": [
+        "legal","legal access","legal tools","contract management access",
+        "legal document management","matter management","legal ops",
+        "legal operations access","company secretarial access",
+        "board portal","sharepoint legal","legal dms","contract lifecycle",
+        "clm","contract lifecycle management","e-signature",
+        "docusign","adobesign","legal platform",
+    ],
+
+    "Operations": [
+        "operations","ops access","operations system","operations tool",
+        "erp","erp access","supply chain access","logistics access",
+        "warehouse management","wms","wms access","inventory access",
+        "production access","manufacturing access","mes",
+        "field service access","facilities access","fleet access",
+        "transport management","tms","procurement access","p2p access",
+    ],
+
+    "Procurement": [
+        "procurement","procurement access","purchasing access","buying access",
+        "sourcing access","supplier portal","vendor portal",
+        "p2p","procure to pay access","contract management procurement",
+        "coupa","ariba","jaggaer","oracle procurement","sap ariba",
+        "spend management","catalogue access","purchase order",
+    ],
+}
+
+# Build reverse lookups — called once at import, very fast at runtime
+_DEPT_LOOKUP = {}
+for _canonical, _synonyms in DEPT_SYNONYMS.items():
+    _DEPT_LOOKUP[_canonical.lower()] = _canonical
+    for _s in _synonyms:
+        _DEPT_LOOKUP[_s.lower()] = _canonical
+
+_ACCESS_LOOKUP = {}
+for _canonical, _synonyms in ACCESS_SYNONYMS.items():
+    _ACCESS_LOOKUP[_canonical.lower()] = _canonical
+    for _s in _synonyms:
+        _ACCESS_LOOKUP[_s.lower()] = _canonical
+
+IT_DEPT_NAMES = {
+    "IT","Information Technology","Technology","Tech","IS","Information Systems",
+    "IT Department","IT Services","IT Operations","IT Ops","Infrastructure",
+    "Security","IT Security","Cyber","Cyber Security","Cybersecurity",
+    "Information Security","InfoSec","DevOps","Dev Ops","Cloud","Platform","SRE",
+    "Engineering","Software Engineering","Digital","Network","Systems",
+    "Site Reliability","Site Reliability Engineering","Data Engineering",
+    "Platform Engineering","Cloud Engineering","Cloud & DevOps",
+}
+
+# Override: IT-related departments that should be treated as IT for super-user check
+# even if they normalise to "Engineering" or other canonical forms
+_IT_OVERRIDE_SYNONYMS = {
+    "devops","dev ops","devsecops","sre","site reliability",
+    "platform","platform engineering","cloud","cloud engineering",
+    "cloud & devops","cloud and devops","infrastructure",
+    "network","networking","systems","system administration",
+    "it support","it helpdesk","service desk it",
+}
+
+def normalise_dept(raw_dept):
+    """
+    Convert any real-world department name to its canonical form.
+    Returns the canonical name if found, otherwise returns the original.
+
+    Examples:
+        "Finance & Accounting" → "Finance"
+        "Information Technology" → "IT"
+        "People & Culture" → "HR"
+        "Customer Success" → "Support"
+        "Biz Dev" → "Sales"
+    """
+    if not raw_dept or str(raw_dept).lower() in ("nan","none",""):
+        return "Unknown"
+    clean = str(raw_dept).strip().lower()
+    # Direct lookup
+    if clean in _DEPT_LOOKUP:
+        return _DEPT_LOOKUP[clean]
+    # Partial match — check if any synonym is contained in the dept name
+    for synonym, canonical in _DEPT_LOOKUP.items():
+        if synonym in clean or clean in synonym:
+            return canonical
+    # Return original with title case if no match found
+    return str(raw_dept).strip()
+
+
+def normalise_access(raw_access):
+    """
+    Convert access level variations to canonical form for comparison.
+    Handles comma-separated multi-role strings.
+
+    Examples:
+        "Full Admin" → "Admin"
+        "Database Administrator" → "DBAdmin"
+        "Read Only" → "ReadOnly"
+        "Finance,HR,Admin" → ["Finance","HR","Admin"]
+    """
+    if not raw_access or str(raw_access).lower() in ("nan","none",""):
+        return []
+    # Split on common delimiters
+    import re
+    parts = re.split(r"[,;|/]", str(raw_access))
+    result = []
+    for part in parts:
+        clean = part.strip().lower()
+        if clean in _ACCESS_LOOKUP:
+            result.append(_ACCESS_LOOKUP[clean])
+        else:
+            # Partial match
+            matched = False
+            for synonym, canonical in _ACCESS_LOOKUP.items():
+                if synonym in clean:
+                    result.append(canonical)
+                    matched = True
+                    break
+            if not matched:
+                result.append(part.strip())
+    return list(dict.fromkeys(result))  # deduplicate preserving order
+
+
+def is_it_department(raw_dept):
+    """
+    Returns True if the department is an IT-related department.
+    Used by the super-user check to avoid false positives.
+    Checks canonical name, original name, AND known IT override synonyms.
+    """
+    if not raw_dept:
+        return False
+    raw_lower = str(raw_dept).strip().lower()
+    canonical = normalise_dept(raw_dept)
+    return (
+        canonical in IT_DEPT_NAMES or
+        canonical.upper() in {d.upper() for d in IT_DEPT_NAMES} or
+        raw_lower in _IT_OVERRIDE_SYNONYMS or
+        any(s in raw_lower for s in _IT_OVERRIDE_SYNONYMS)
+    )
+
+
 SOD_RULES = {
     "Sales":             ["Admin","Finance","Payroll","DBAdmin","HR"],
     "Marketing":         ["Admin","DBAdmin","Payroll","Finance"],
@@ -247,10 +1012,15 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
     sys = sys_df.copy()
     sys["_em"] = sys["Email"].str.strip().str.lower()
 
-    # Pre-compute duplicates BEFORE scope filtering
-    # (same email appearing twice = duplicate regardless of scope)
+    # Pre-compute duplicates — only flag genuine duplicate provisioning
+    # Exclude service account patterns which legitimately appear on multiple systems
     email_freq  = sys["_em"].value_counts()
-    dup_set     = set(email_freq[email_freq > 1].index)
+    import re as _re
+    _svc_pat = r"^(svc[._]|svc$|service[._]|batch[._]|noreply|system[._]|backup[._]|admin[._]shared|generic)"
+    dup_set = set(
+        em for em, cnt in email_freq.items()
+        if cnt > 1 and not _re.match(_svc_pat, str(em), _re.IGNORECASE)
+    )
 
     # Pre-compute multi-system BEFORE scope filtering
     if "SystemName" in sys.columns:
@@ -280,8 +1050,9 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         pwd_set      = parse_date(row.get("PasswordLastSet"))
         acct_created = parse_date(row.get("AccountCreatedDate"))
 
-        days_idle = safe_days(last_login, today_dt)
-        pwd_days  = safe_days(pwd_set,    today_dt)
+        # Use scope_end_dt so dormant/expired = inactive within audit period
+        days_idle = safe_days(last_login, scope_end_dt)
+        pwd_days  = safe_days(pwd_set,    scope_end_dt)
 
         # ── SCOPE FILTER ─────────────────────────────────────────────────────
         # Logic:
@@ -378,7 +1149,8 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
 
         # ─── Account IS in HR — run all deeper checks ─────────────────────
         hr_row     = hr_lookup.loc[u_email]
-        dept       = str(hr_row.get("Department",       "Unknown")).strip()
+        _raw_dept  = str(hr_row.get("Department", "Unknown")).strip()
+        dept       = normalise_dept(_raw_dept)   # "Finance & Accounting" → "Finance"
         emp_status = str(hr_row.get("EmploymentStatus", "Active")).strip().lower()
         contract   = str(hr_row.get("ContractType",     "")).strip().lower()
         term_date  = parse_date(hr_row.get("TerminationDate"))
@@ -409,11 +1181,16 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 6: Contractor without expiry date
         # ═══════════════════════════════════════════════════════════════════
-        if "contractor" in contract and term_date is None:
+        _join_raw = hr_row.get("JoinDate") or hr_row.get("StartDate") or hr_row.get("HireDate")
+        _join_dt  = parse_date(_join_raw)
+        _days_join = safe_days(_join_dt, scope_end_dt) if _join_dt else 9999
+        if ("contractor" in contract and term_date is None
+                and (_days_join is None or _days_join > 30)):
             findings.append(make_finding(
                 row_dict, "Contractor Without Expiry Date",
-                f"'{u_name}' is a {contract} with no termination/expiry date in HR. "
-                f"Access will persist indefinitely after the engagement ends.",
+                f"'{u_name}' is a {contract} with no termination/expiry date "
+                f"({int(_days_join) if _days_join else 'unknown'} days in system). "
+                f"Access will persist indefinitely after engagement ends.",
                 days_idle, selected_fw=selected_fw,
             ))
         # Note: does NOT continue — contractor can also be dormant, SoD-violating etc.
@@ -449,8 +1226,16 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # Uses dept from HR (more reliable than system file dept column)
         # ═══════════════════════════════════════════════════════════════════
         forbidden = active_sod.get(dept, [])
+        # Also check normalised canonical department name
+        if not forbidden:
+            forbidden = active_sod.get(normalise_dept(dept), [])
+        _norm_access = normalise_access(u_access)  # ["Finance","Admin"] etc.
         for fb in forbidden:
-            if fb.lower() in u_access.lower():
+            _fb_norm = normalise_access(fb)
+            _fb_canonical = _fb_norm[0] if _fb_norm else fb
+            if (_fb_canonical in _norm_access or
+                    fb.lower() in u_access.lower() or
+                    any(fb.lower() in a.lower() for a in _norm_access)):
                 findings.append(make_finding(
                     row_dict, "Toxic Access (SoD Violation)",
                     f"'{dept}' user holds '{u_access}'. "
@@ -474,17 +1259,25 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 11: Super-user outside IT
+        # Only fires if not already flagged by SoD check for same access level.
+        # This prevents double-counting where SoD and superuser both fire.
         # ═══════════════════════════════════════════════════════════════════
-        is_it_dept = dept.lower() in ("it", "information technology", "security", "infosec", "cyber")
-        for hr_kw in HIGH_RISK_ACCESS:
-            if hr_kw.lower() in u_access.lower() and not is_it_dept:
-                findings.append(make_finding(
-                    row_dict, "Super-User / Admin Access",
-                    f"'{dept}' user holds '{u_access}'. "
-                    f"Admin-level access for a non-IT user requires explicit written CISO approval.",
-                    days_idle, selected_fw=selected_fw,
-                ))
-                break
+        is_it_dept = is_it_department(dept)  # intelligent IT dept detection
+        _already_sod = any(
+            f.get("Email","").lower() == u_email and f.get("IssueType") == "Toxic Access (SoD Violation)"
+            for f in findings[-20:]  # only check recent findings for performance
+        )
+        if not _already_sod:
+            for hr_kw in HIGH_RISK_ACCESS:
+                if hr_kw.lower() in u_access.lower() and not is_it_dept:
+                    findings.append(make_finding(
+                        row_dict, "Super-User / Admin Access",
+                        f"'{dept}' user '{u_name}' holds '{u_access}'. "
+                        f"Admin-level access for a non-IT user requires explicit written CISO approval "
+                        f"and must appear in the Privileged User Registry.",
+                        days_idle, selected_fw=selected_fw,
+                    ))
+                    break
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 12: Password never expired
@@ -1170,6 +1963,9 @@ def run_rbac_checks(sys_df, hr_df, rbac_matrix, selected_fw, today_dt):
         hr_row   = hr_lkp.loc[u_email]
         job      = str(hr_row.get("JobTitle","")).strip()
         emp_stat = str(hr_row.get("EmploymentStatus","Active")).strip().lower()
+        # Normalise dept for consistent matching
+        _raw_dept_rbac = str(hr_row.get("Department","")).strip()
+        _dept_rbac = normalise_dept(_raw_dept_rbac)
 
         # Skip terminated employees — handled by other checks
         if emp_stat in ("terminated","resigned","inactive"):
@@ -1186,13 +1982,23 @@ def run_rbac_checks(sys_df, hr_df, rbac_matrix, selected_fw, today_dt):
         # Parse actual access levels (comma-separated)
         actual_levels = [a.strip() for a in u_access.split(",") if a.strip()]
 
+        # Normalise actual access levels for intelligent comparison
+        _norm_actual = normalise_access(u_access)
+        _norm_permitted = []
+        for p in permitted:
+            _norm_permitted.extend(normalise_access(p))
+
         # Check each actual level against permitted list
         violations = []
         for level in actual_levels:
-            # Check if this level is permitted (case-insensitive partial match)
-            is_permitted = any(
-                level.lower() in p.lower() or p.lower() in level.lower()
-                for p in permitted
+            _norm_level = normalise_access(level)
+            _norm_level_canonical = _norm_level[0] if _norm_level else level
+            # Check if this level is permitted
+            is_permitted = (
+                _norm_level_canonical in _norm_permitted or
+                level.lower() in [p.lower() for p in permitted] or
+                any(level.lower() in p.lower() or p.lower() in level.lower()
+                    for p in permitted)
             )
             if not is_permitted:
                 violations.append(level)
