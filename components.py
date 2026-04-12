@@ -1,140 +1,124 @@
-"""Shared UI components for 80 — IAM Audit Tool. Dark premium theme."""
+"""Shared UI components for 80 — IAM Audit Tool. Dark premium theme v2."""
 
 import streamlit as st
 
-# ── Global CSS — injected once, applies everywhere ──────────────────────────
 GLOBAL_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* ── ROOT OVERRIDES ─────────────────────────────────────────────────────── */
 :root {
-  --navy:       #0B1628;
-  --navy-2:     #111f38;
-  --navy-3:     #1a2f52;
-  --navy-4:     #1F3864;
-  --navy-5:     #243b6e;
-  --ice:        #4d9fff;
-  --ice-dim:    #2a5f9e;
-  --ice-glow:   rgba(77,159,255,0.15);
-  --white:      #ffffff;
-  --off-white:  #e8edf5;
-  --muted:      #7a8fa6;
-  --muted-2:    #4a5e78;
-  --green:      #00c896;
-  --green-dim:  rgba(0,200,150,0.15);
-  --red:        #ff4757;
-  --red-dim:    rgba(255,71,87,0.12);
-  --amber:      #ffa502;
-  --amber-dim:  rgba(255,165,2,0.12);
-  --border:     rgba(255,255,255,0.07);
-  --border-2:   rgba(255,255,255,0.12);
-  --shadow:     0 4px 24px rgba(0,0,0,0.4);
-  --shadow-sm:  0 2px 12px rgba(0,0,0,0.3);
-  --radius:     10px;
-  --radius-lg:  16px;
+  --navy:      #080f1e;
+  --navy-2:    #0d1628;
+  --navy-3:    #111f38;
+  --navy-4:    #1a2f52;
+  --navy-5:    #1F3864;
+  --ice:       #4d9fff;
+  --ice-dim:   #1a3a6e;
+  --ice-glow:  rgba(77,159,255,0.12);
+  --white:     #ffffff;
+  --off:       #c8d8ef;
+  --muted:     #5a7394;
+  --green:     #00d4a0;
+  --red:       #ff4d5e;
+  --amber:     #ffb347;
+  --border:    rgba(255,255,255,0.06);
+  --border-2:  rgba(255,255,255,0.11);
+  --radius:    10px;
+  --radius-lg: 16px;
 }
 
-/* ── FULL APP BACKGROUND ───────────────────────────────────────────────── */
-html, body, [data-testid="stAppViewContainer"],
-[data-testid="stApp"], .main, .block-container {
+/* ── KILL STREAMLIT DEFAULT CHROME ──────────────────────────────────────── */
+#MainMenu, footer, [data-testid="stDecoration"],
+[data-testid="stToolbar"], [data-testid="stStatusWidget"],
+header[data-testid="stHeader"] { display:none !important; }
+
+/* ── FULL APP BACKGROUND ────────────────────────────────────────────────── */
+html, body,
+[data-testid="stAppViewContainer"],
+[data-testid="stApp"],
+.main, section.main,
+.block-container {
   background: var(--navy) !important;
-  color: var(--off-white) !important;
-  font-family: 'Inter', sans-serif !important;
+  color: var(--off) !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+}
+
+/* ── REMOVE DEFAULT TOP PADDING (our header takes that space) ───────────── */
+.block-container {
+  padding-top: 0 !important;
+  padding-left: 2.5rem !important;
+  padding-right: 2.5rem !important;
+  max-width: 1140px !important;
 }
 
 /* ── SIDEBAR ────────────────────────────────────────────────────────────── */
-[data-testid="stSidebar"], [data-testid="stSidebar"] > div {
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] > div:first-child {
   background: var(--navy-2) !important;
   border-right: 1px solid var(--border) !important;
 }
-[data-testid="stSidebar"] * {
-  color: var(--off-white) !important;
-  font-family: 'Inter', sans-serif !important;
-}
+[data-testid="stSidebarNav"] { padding-top: 8px !important; }
 [data-testid="stSidebarNav"] a {
   color: var(--muted) !important;
   font-size: 13px !important;
   font-weight: 500 !important;
-  padding: 8px 12px !important;
-  border-radius: 6px !important;
-  transition: all 0.2s !important;
+  border-radius: 8px !important;
+  padding: 9px 14px !important;
+  transition: all 0.18s !important;
 }
-[data-testid="stSidebarNav"] a:hover {
+[data-testid="stSidebarNav"] a:hover,
+[data-testid="stSidebarNav"] a[aria-selected="true"] {
   background: var(--ice-glow) !important;
   color: var(--ice) !important;
 }
 
-/* ── TOP HEADER BAR ─────────────────────────────────────────────────────── */
-[data-testid="stHeader"] {
-  background: var(--navy) !important;
-  border-bottom: 1px solid var(--border) !important;
-}
-
-/* ── BLOCK CONTAINER ────────────────────────────────────────────────────── */
-.block-container {
-  padding: 2rem 3rem !important;
-  max-width: 1100px !important;
-}
-
 /* ── HEADINGS ───────────────────────────────────────────────────────────── */
-h1, h2, h3, h4, h5, h6 {
+h1,h2,h3,h4,h5,h6 {
   color: var(--white) !important;
   font-family: 'Inter', sans-serif !important;
-  font-weight: 700 !important;
-  letter-spacing: -0.02em !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.025em !important;
 }
+p, li { color: var(--off) !important; font-family: 'Inter', sans-serif !important; }
 
-/* ── PARAGRAPH / BODY TEXT ──────────────────────────────────────────────── */
-p, li, span, label, div {
-  color: var(--off-white) !important;
-  font-family: 'Inter', sans-serif !important;
-}
-
-/* ── METRIC CARDS ───────────────────────────────────────────────────────── */
+/* ── METRICS ────────────────────────────────────────────────────────────── */
 [data-testid="stMetric"] {
   background: var(--navy-3) !important;
   border: 1px solid var(--border-2) !important;
-  border-radius: var(--radius) !important;
-  padding: 20px 22px !important;
-  transition: border-color 0.2s !important;
+  border-radius: var(--radius-lg) !important;
+  padding: 22px 24px !important;
 }
-[data-testid="stMetric"]:hover {
-  border-color: var(--ice-dim) !important;
-}
-[data-testid="stMetricLabel"] {
+[data-testid="stMetricLabel"] p {
   color: var(--muted) !important;
   font-size: 11px !important;
   font-weight: 600 !important;
-  letter-spacing: 0.06em !important;
+  letter-spacing: 0.08em !important;
   text-transform: uppercase !important;
 }
 [data-testid="stMetricValue"] {
   color: var(--white) !important;
-  font-size: 28px !important;
-  font-weight: 800 !important;
-  letter-spacing: -0.03em !important;
+  font-size: 30px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.04em !important;
 }
-[data-testid="stMetricDelta"] { display: none !important; }
+[data-testid="stMetricDelta"] { display:none !important; }
 
 /* ── BUTTONS ────────────────────────────────────────────────────────────── */
 .stButton > button {
-  background: var(--navy-3) !important;
-  color: var(--off-white) !important;
+  background: var(--navy-4) !important;
+  color: var(--off) !important;
   border: 1px solid var(--border-2) !important;
   border-radius: 8px !important;
   font-family: 'Inter', sans-serif !important;
   font-weight: 600 !important;
   font-size: 13px !important;
-  padding: 10px 20px !important;
-  transition: all 0.2s !important;
-  letter-spacing: 0.01em !important;
+  transition: all 0.18s !important;
 }
 .stButton > button:hover {
-  background: var(--navy-4) !important;
+  background: var(--navy-5) !important;
   border-color: var(--ice) !important;
   color: var(--white) !important;
-  box-shadow: 0 0 20px var(--ice-glow) !important;
+  box-shadow: 0 0 18px var(--ice-glow) !important;
 }
 .stButton > button[kind="primary"] {
   background: var(--ice) !important;
@@ -144,20 +128,18 @@ p, li, span, label, div {
 }
 .stButton > button[kind="primary"]:hover {
   background: #6db8ff !important;
-  box-shadow: 0 0 30px rgba(77,159,255,0.4) !important;
+  box-shadow: 0 0 28px rgba(77,159,255,0.45) !important;
 }
 
-/* ── SELECT / INPUT ─────────────────────────────────────────────────────── */
-[data-testid="stSelectbox"], [data-testid="stTextInput"],
-[data-testid="stNumberInput"], [data-testid="stDateInput"] {
-  background: var(--navy-3) !important;
-  border-radius: var(--radius) !important;
-}
-.stSelectbox > div > div, .stTextInput > div > div > input {
+/* ── INPUTS ─────────────────────────────────────────────────────────────── */
+.stSelectbox > div > div,
+.stTextInput > div > div > input,
+.stNumberInput > div > div > input {
   background: var(--navy-3) !important;
   color: var(--white) !important;
   border: 1px solid var(--border-2) !important;
   border-radius: 8px !important;
+  font-family: 'Inter', sans-serif !important;
 }
 
 /* ── FILE UPLOADER ──────────────────────────────────────────────────────── */
@@ -165,15 +147,8 @@ p, li, span, label, div {
   background: var(--navy-3) !important;
   border: 1px dashed var(--border-2) !important;
   border-radius: var(--radius-lg) !important;
-  padding: 12px !important;
-  transition: border-color 0.2s !important;
 }
-[data-testid="stFileUploader"]:hover {
-  border-color: var(--ice-dim) !important;
-}
-[data-testid="stFileUploaderDropzone"] {
-  background: transparent !important;
-}
+[data-testid="stFileUploaderDropzone"] { background: transparent !important; }
 
 /* ── EXPANDER ───────────────────────────────────────────────────────────── */
 [data-testid="stExpander"] {
@@ -181,63 +156,52 @@ p, li, span, label, div {
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
 }
-[data-testid="stExpander"] summary {
-  color: var(--off-white) !important;
-  font-weight: 600 !important;
-}
 
-/* ── DATAFRAME / TABLE ──────────────────────────────────────────────────── */
-[data-testid="stDataFrame"], .stDataFrame {
+/* ── DATAFRAME ──────────────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
   background: var(--navy-3) !important;
   border: 1px solid var(--border) !important;
   border-radius: var(--radius) !important;
 }
 
 /* ── TABS ───────────────────────────────────────────────────────────────── */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {
+[data-baseweb="tab-list"] {
   background: var(--navy-2) !important;
   border-bottom: 1px solid var(--border) !important;
+  gap: 4px !important;
 }
-[data-testid="stTabs"] [data-baseweb="tab"] {
+[data-baseweb="tab"] {
   color: var(--muted) !important;
   font-weight: 600 !important;
   font-size: 13px !important;
+  font-family: 'Inter', sans-serif !important;
+  border-radius: 6px 6px 0 0 !important;
 }
-[data-testid="stTabs"] [aria-selected="true"] {
+[aria-selected="true"][data-baseweb="tab"] {
   color: var(--ice) !important;
-  border-bottom: 2px solid var(--ice) !important;
-}
-
-/* ── PROGRESS BAR ───────────────────────────────────────────────────────── */
-[data-testid="stProgressBar"] > div > div {
-  background: var(--ice) !important;
-}
-[data-testid="stProgressBar"] > div {
-  background: var(--navy-3) !important;
+  background: var(--ice-glow) !important;
 }
 
 /* ── ALERTS ─────────────────────────────────────────────────────────────── */
-[data-testid="stAlert"] {
-  border-radius: var(--radius) !important;
-  border: 1px solid var(--border-2) !important;
-}
+.stSuccess  { background: rgba(0,212,160,0.08)  !important; border-left: 3px solid var(--green) !important; border-radius: var(--radius) !important; }
+.stWarning  { background: rgba(255,179,71,0.08)  !important; border-left: 3px solid var(--amber) !important; border-radius: var(--radius) !important; }
+.stError    { background: rgba(255,77,94,0.08)   !important; border-left: 3px solid var(--red)   !important; border-radius: var(--radius) !important; }
+.stInfo     { background: var(--ice-glow)         !important; border-left: 3px solid var(--ice)   !important; border-radius: var(--radius) !important; }
+
+/* ── PROGRESS ───────────────────────────────────────────────────────────── */
+[data-testid="stProgressBar"] > div { background: var(--navy-3) !important; }
+[data-testid="stProgressBar"] > div > div { background: var(--ice) !important; }
 
 /* ── DIVIDER ────────────────────────────────────────────────────────────── */
-hr {
-  border-color: var(--border) !important;
-  opacity: 1 !important;
-}
+hr { border-color: var(--border) !important; opacity:1 !important; }
 
 /* ── SCROLLBAR ──────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar { width:5px; height:5px; }
 ::-webkit-scrollbar-track { background: var(--navy-2); }
-::-webkit-scrollbar-thumb { background: var(--navy-5); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--navy-5); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ice-dim); }
 
-/* ── SPINNER ────────────────────────────────────────────────────────────── */
-[data-testid="stSpinner"] { color: var(--ice) !important; }
-
-/* ── CODE BLOCKS ────────────────────────────────────────────────────────── */
+/* ── CODE ───────────────────────────────────────────────────────────────── */
 code, pre {
   background: var(--navy-2) !important;
   color: var(--ice) !important;
@@ -245,212 +209,190 @@ code, pre {
   border: 1px solid var(--border) !important;
   border-radius: 6px !important;
 }
-
-/* ── TOOLTIP ────────────────────────────────────────────────────────────── */
-[data-testid="stTooltipIcon"] { color: var(--muted) !important; }
-
-/* ── CHECKBOX / RADIO ───────────────────────────────────────────────────── */
-[data-testid="stCheckbox"] label, [data-testid="stRadio"] label {
-  color: var(--off-white) !important;
-}
-
-/* ── COLUMNS SPACING ────────────────────────────────────────────────────── */
-[data-testid="stHorizontalBlock"] { gap: 16px !important; }
-
-/* ── SUCCESS / WARNING / ERROR BOXES ────────────────────────────────────── */
-.stSuccess { background: var(--green-dim) !important; border-left: 3px solid var(--green) !important; }
-.stWarning { background: var(--amber-dim) !important; border-left: 3px solid var(--amber) !important; }
-.stError   { background: var(--red-dim)   !important; border-left: 3px solid var(--red)   !important; }
-.stInfo    { background: var(--ice-glow)  !important; border-left: 3px solid var(--ice)   !important; }
-
-/* ── HIDE STREAMLIT BRANDING ────────────────────────────────────────────── */
-#MainMenu, footer, [data-testid="stDecoration"] { display: none !important; }
-[data-testid="stToolbar"] { display: none !important; }
-
-/* ── BADGE COMPONENT ────────────────────────────────────────────────────── */
-.badge-critical { background:rgba(255,71,87,0.15);color:#ff4757;border:1px solid rgba(255,71,87,0.3);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.05em;font-family:'Inter',sans-serif; }
-.badge-high     { background:rgba(255,165,2,0.15);color:#ffa502;border:1px solid rgba(255,165,2,0.3);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.05em;font-family:'Inter',sans-serif; }
-.badge-medium   { background:rgba(77,159,255,0.15);color:#4d9fff;border:1px solid rgba(77,159,255,0.3);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.05em;font-family:'Inter',sans-serif; }
-.badge-clean    { background:rgba(0,200,150,0.15);color:#00c896;border:1px solid rgba(0,200,150,0.3);padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.05em;font-family:'Inter',sans-serif; }
-
-/* ── CARD COMPONENT ─────────────────────────────────────────────────────── */
-.card {
-  background: var(--navy-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 24px 28px;
-  margin-bottom: 16px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.card:hover {
-  border-color: var(--border-2);
-  box-shadow: var(--shadow-sm);
-}
-.card-accent-red    { border-left: 3px solid var(--red)   !important; }
-.card-accent-amber  { border-left: 3px solid var(--amber) !important; }
-.card-accent-blue   { border-left: 3px solid var(--ice)   !important; }
-.card-accent-green  { border-left: 3px solid var(--green) !important; }
-
-/* ── FINDING ROW ────────────────────────────────────────────────────────── */
-.finding-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 14px 18px;
-  background: var(--navy-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  margin-bottom: 8px;
-  transition: border-color 0.2s;
-}
-.finding-row:hover { border-color: var(--border-2); }
-
-/* ── NUMBER GLOW (for stats) ─────────────────────────────────────────────── */
-.stat-number {
-  font-size: 48px;
-  font-weight: 900;
-  color: var(--white);
-  letter-spacing: -0.04em;
-  font-family: 'Inter', sans-serif;
-  line-height: 1;
-}
-.stat-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-top: 6px;
-  font-family: 'Inter', sans-serif;
-}
 </style>
 """
 
+# ── NAV ITEMS (edit these to match your page names) ───────────────────────────
+NAV_ITEMS = [
+    ("Tool",       "🛡",  "/Tool"),
+    ("About",      "📋", "/About"),
+    ("How to Use", "📖", "/How_to_Use"),
+]
+
 def inject_css():
-    """Inject global CSS. Call once per page at the top."""
     st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 
 
-def render_header():
-    """Premium dark header bar with logo and product name."""
+def render_header(active="Home"):
+    """
+    Full custom header — suppresses Streamlit chrome entirely.
+    Call at the very top of every page, before any other st.* call.
+    """
     inject_css()
-    st.markdown("""
+
+    nav_html = ""
+    for label, icon, href in NAV_ITEMS:
+        is_active = (label == active)
+        color     = "#4d9fff" if is_active else "#5a7394"
+        bg        = "rgba(77,159,255,0.1)" if is_active else "transparent"
+        border    = "1px solid rgba(77,159,255,0.25)" if is_active else "1px solid transparent"
+        nav_html += f"""
+        <a href="{href}" target="_self" style="
+          display:inline-flex;align-items:center;gap:6px;
+          font-size:13px;font-weight:600;color:{color};
+          font-family:'Inter',sans-serif;text-decoration:none;
+          padding:7px 14px;border-radius:8px;
+          background:{bg};border:{border};
+          transition:all 0.18s;letter-spacing:0.01em;
+        ">{icon} {label}</a>"""
+
+    st.markdown(f"""
 <div style="
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  padding:0 0 24px 0;
+  width:100%;
+  background:rgba(8,15,30,0.95);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
   border-bottom:1px solid rgba(255,255,255,0.07);
-  margin-bottom:32px;
+  padding:0 0 0 0;
+  margin-bottom:40px;
+  position:sticky;top:0;z-index:999;
 ">
-  <div style="display:flex;align-items:center;gap:16px;">
-    <!-- Logo mark -->
-    <div style="
-      width:48px;height:48px;
-      background:linear-gradient(135deg,#1F3864 0%,#2a4f8a 100%);
-      border-radius:12px;
-      display:flex;align-items:center;justify-content:center;
-      border:1px solid rgba(255,255,255,0.12);
-      box-shadow:0 4px 16px rgba(0,0,0,0.4);
-      flex-shrink:0;
-    ">
-      <span style="font-size:22px;font-weight:900;color:#fff;letter-spacing:-1px;font-family:'Inter',sans-serif;">80</span>
-    </div>
-    <!-- Name + tagline -->
-    <div>
-      <div style="font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;font-family:'Inter',sans-serif;line-height:1.1;">80</div>
-      <div style="font-size:11px;color:#4d9fff;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;font-family:'Inter',sans-serif;margin-top:2px;">IAM Audit Tool</div>
-    </div>
-  </div>
-  <!-- Right side — verified badge -->
   <div style="
-    background:rgba(0,200,150,0.1);
-    border:1px solid rgba(0,200,150,0.25);
-    border-radius:20px;
-    padding:6px 14px;
-    display:flex;align-items:center;gap:6px;
+    max-width:1140px;margin:0 auto;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 2.5rem;
   ">
-    <div style="width:6px;height:6px;background:#00c896;border-radius:50%;box-shadow:0 0 8px rgba(0,200,150,0.6);"></div>
-    <span style="font-size:11px;font-weight:700;color:#00c896;letter-spacing:0.05em;font-family:'Inter',sans-serif;">VERIFIED · 5,000 ACCOUNTS TESTED</span>
+
+    <!-- LEFT: Logo -->
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="
+        width:42px;height:42px;
+        background:#1F3864;
+        border-radius:11px;
+        display:flex;align-items:center;justify-content:center;
+        border:1px solid rgba(255,255,255,0.15);
+        box-shadow:0 2px 12px rgba(0,0,0,0.5),inset 0 1px 0 rgba(255,255,255,0.1);
+        flex-shrink:0;
+      ">
+        <span style="
+          font-size:19px;font-weight:900;color:#fff;
+          letter-spacing:-1px;font-family:'Inter',sans-serif;
+        ">80</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span style="
+          font-size:17px;font-weight:800;color:#ffffff;
+          letter-spacing:-0.03em;font-family:'Inter',sans-serif;
+          line-height:1;
+        ">80</span>
+        <span style="
+          font-size:10px;font-weight:600;color:#4d9fff;
+          letter-spacing:0.12em;text-transform:uppercase;
+          font-family:'Inter',sans-serif;line-height:1;
+        ">IAM Audit Tool</span>
+      </div>
+    </div>
+
+    <!-- CENTRE: Nav -->
+    <div style="display:flex;align-items:center;gap:4px;">
+      {nav_html}
+    </div>
+
+    <!-- RIGHT: Status pill -->
+    <div style="
+      display:flex;align-items:center;gap:7px;
+      background:rgba(0,212,160,0.08);
+      border:1px solid rgba(0,212,160,0.2);
+      border-radius:20px;padding:7px 14px;
+    ">
+      <div style="
+        width:6px;height:6px;background:#00d4a0;border-radius:50%;
+        box-shadow:0 0 8px rgba(0,212,160,0.7);flex-shrink:0;
+        animation:pulse 2s infinite;
+      "></div>
+      <span style="
+        font-size:11px;font-weight:700;color:#00d4a0;
+        letter-spacing:0.06em;font-family:'Inter',sans-serif;
+        text-transform:uppercase;white-space:nowrap;
+      ">Engine live · 5K verified</span>
+    </div>
+
   </div>
 </div>
+
+<style>
+@keyframes pulse {{
+  0%,100% {{ box-shadow: 0 0 8px rgba(0,212,160,0.7); }}
+  50%      {{ box-shadow: 0 0 16px rgba(0,212,160,0.4); }}
+}}
+</style>
 """, unsafe_allow_html=True)
 
 
 def render_sidebar_brand():
     """Premium dark sidebar brand block."""
+    inject_css()
     st.markdown("""
-<div style="padding:16px 0 20px;border-bottom:1px solid rgba(255,255,255,0.07);margin-bottom:12px;">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+<div style="padding:20px 4px 20px;border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:16px;">
+  <div style="display:flex;align-items:center;gap:11px;margin-bottom:14px;">
     <div style="
-      width:36px;height:36px;
-      background:linear-gradient(135deg,#1F3864 0%,#2a4f8a 100%);
-      border-radius:9px;
+      width:38px;height:38px;
+      background:#1F3864;
+      border-radius:10px;
       display:flex;align-items:center;justify-content:center;
-      border:1px solid rgba(255,255,255,0.12);
+      border:1px solid rgba(255,255,255,0.14);
+      box-shadow:0 2px 10px rgba(0,0,0,0.4);
       flex-shrink:0;
     ">
-      <span style="font-size:16px;font-weight:900;color:#fff;font-family:'Inter',sans-serif;">80</span>
+      <span style="font-size:17px;font-weight:900;color:#fff;font-family:'Inter',sans-serif;letter-spacing:-1px;">80</span>
     </div>
     <div>
-      <div style="font-size:15px;font-weight:800;color:#ffffff;font-family:'Inter',sans-serif;line-height:1.1;">80</div>
-      <div style="font-size:10px;color:#4d9fff;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;font-family:'Inter',sans-serif;">IAM Audit Tool</div>
+      <div style="font-size:16px;font-weight:800;color:#ffffff;font-family:'Inter',sans-serif;letter-spacing:-0.03em;line-height:1.1;">80</div>
+      <div style="font-size:10px;font-weight:600;color:#4d9fff;letter-spacing:0.1em;text-transform:uppercase;font-family:'Inter',sans-serif;margin-top:2px;">IAM Audit Tool</div>
     </div>
   </div>
-  <!-- Status pill -->
   <div style="
-    background:rgba(0,200,150,0.1);
-    border:1px solid rgba(0,200,150,0.2);
-    border-radius:6px;
-    padding:8px 12px;
+    background:rgba(0,212,160,0.08);
+    border:1px solid rgba(0,212,160,0.18);
+    border-radius:8px;
+    padding:9px 12px;
     display:flex;align-items:center;gap:8px;
   ">
-    <div style="width:5px;height:5px;background:#00c896;border-radius:50%;box-shadow:0 0 6px rgba(0,200,150,0.7);flex-shrink:0;"></div>
-    <span style="font-size:10px;font-weight:600;color:#00c896;font-family:'Inter',sans-serif;letter-spacing:0.04em;">Engine verified · 5K stress tested</span>
+    <div style="width:5px;height:5px;background:#00d4a0;border-radius:50%;box-shadow:0 0 7px rgba(0,212,160,0.8);flex-shrink:0;"></div>
+    <span style="font-size:10px;font-weight:600;color:#00d4a0;font-family:'Inter',sans-serif;letter-spacing:0.04em;">5,000 accounts · zero false positives</span>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
 
-def stat_card(number, label, sublabel="", accent_color="#4d9fff"):
-    """Premium stat card with large number."""
+def stat_card(number, label, sublabel="", color="#4d9fff"):
     return f"""
 <div style="
-  background:#1a2f52;
-  border:1px solid rgba(255,255,255,0.08);
+  background:#111f38;
+  border:1px solid rgba(255,255,255,0.07);
   border-radius:14px;
-  padding:24px 22px;
+  padding:24px 20px;
   text-align:center;
-  border-top:2px solid {accent_color};
-  transition:all 0.2s;
+  border-top:2px solid {color};
 ">
-  <div style="font-size:38px;font-weight:900;color:#ffffff;letter-spacing:-0.04em;font-family:'Inter',sans-serif;line-height:1;">{number}</div>
-  <div style="font-size:12px;font-weight:700;color:{accent_color};letter-spacing:0.06em;text-transform:uppercase;font-family:'Inter',sans-serif;margin-top:8px;">{label}</div>
-  {f'<div style="font-size:10px;color:#4a5e78;font-family:Inter,sans-serif;margin-top:4px;">{sublabel}</div>' if sublabel else ''}
+  <div style="font-size:36px;font-weight:900;color:#ffffff;
+    letter-spacing:-0.04em;font-family:'Inter',sans-serif;line-height:1;">{number}</div>
+  <div style="font-size:11px;font-weight:700;color:{color};
+    letter-spacing:0.07em;text-transform:uppercase;
+    font-family:'Inter',sans-serif;margin-top:8px;">{label}</div>
+  {f'<div style="font-size:10px;color:#5a7394;font-family:Inter,sans-serif;margin-top:4px;">{sublabel}</div>' if sublabel else ''}
 </div>"""
 
 
 def section_header(title, subtitle=""):
-    """Section header with accent line."""
-    sub = f'<div style="font-size:13px;color:#7a8fa6;font-family:Inter,sans-serif;margin-top:6px;font-weight:400;">{subtitle}</div>' if subtitle else ''
+    sub = f'<div style="font-size:13px;color:#5a7394;font-family:Inter,sans-serif;margin-top:5px;font-weight:400;">{subtitle}</div>' if subtitle else ''
     return f"""
-<div style="margin:40px 0 24px;">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
-    <div style="width:3px;height:24px;background:#4d9fff;border-radius:2px;flex-shrink:0;"></div>
-    <h2 style="font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.03em;font-family:Inter,sans-serif;margin:0;">{title}</h2>
+<div style="margin:44px 0 22px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+    <div style="width:3px;height:22px;background:#4d9fff;border-radius:2px;flex-shrink:0;box-shadow:0 0 8px rgba(77,159,255,0.5);"></div>
+    <div style="font-size:19px;font-weight:800;color:#ffffff;
+      letter-spacing:-0.025em;font-family:Inter,sans-serif;">{title}</div>
   </div>
   {sub}
 </div>"""
-
-
-def check_pill(label, color):
-    """Small severity pill."""
-    colors = {
-        "critical": ("#ff4757", "rgba(255,71,87,0.15)"),
-        "high":     ("#ffa502", "rgba(255,165,2,0.15)"),
-        "medium":   ("#4d9fff", "rgba(77,159,255,0.15)"),
-        "clean":    ("#00c896", "rgba(0,200,150,0.15)"),
-    }
-    fc, bg = colors.get(color.lower(), ("#7a8fa6", "rgba(122,143,166,0.15)"))
-    return f'<span style="background:{bg};color:{fc};border:1px solid {fc}44;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.05em;font-family:Inter,sans-serif;">{label}</span>'
 
