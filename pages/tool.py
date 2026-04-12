@@ -500,7 +500,7 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
     if (st.session_state.get("_last_cache_key") != _cache_key or
             "findings_cache" not in st.session_state):
         with st.spinner("🔍 Running 18 checks across all identities — this may take a moment for large files..."):
-            findings_df, excluded_count = run_audit(
+            findings_df, excluded_count, col_warnings = run_audit(
                 hr_df_f, sys_df_f,
                 SCOPE_START, SCOPE_END,
                 DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
@@ -516,9 +516,15 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
     else:
         findings_df    = st.session_state["findings_cache"]
         excluded_count = st.session_state["excluded_cache"]
+        col_warnings   = st.session_state.get("col_warnings", [])
 
     in_scope_n = len(sys_df_f) - excluded_count
     total = len(findings_df)
+
+    # Show missing column warnings prominently
+    if col_warnings:
+        for w in col_warnings:
+            st.warning(w)
 
     # Scope & doc banner
     doc_names = ", ".join(f.name for f,_ in doc_files) if doc_files else "None uploaded"
@@ -579,6 +585,9 @@ The tool supports up to 15 years back.
             ("Multi-System",     "Excessive Multi-System Access"),
             ("No Expiry",        "Contractor Without Expiry Date"),
             ("Near-Match",       "Near-Match Email"),
+            ("RBAC Violations",  "RBAC Violation"),
+            ("Unauth Priv",      "Unauthorised Privileged Account"),
+            ("Reg. Overdue",     "Privileged Account Review Overdue"),
         ]):
             cc[i%5].metric(lbl, cnt("IssueType",itype))
 
