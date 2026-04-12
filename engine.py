@@ -987,6 +987,8 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
     scope_start_dt = datetime.combine(scope_start, datetime.min.time())
     scope_end_dt   = datetime.combine(scope_end,   datetime.max.time())
     findings, excluded_count = [], 0
+    seen_duplicates  = set()   # tracks emails already flagged for duplicate
+    _sod_flagged_emails = set()  # tracks emails flagged for SoD — prevents superuser double-count
 
     # Apply SoD rules from uploaded SOA/policy document if provided
     # This means findings cite the CLIENT'S own policy, not hardcoded defaults
@@ -1158,7 +1160,7 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 4 & 5: Terminated employee / Post-termination login
         # ═══════════════════════════════════════════════════════════════════
-        if emp_status in ("terminated", "resigned", "inactive", "on leave", "redundant"):
+        if emp_status in ("terminated", "resigned", "inactive", "redundant"):
             if last_login and term_date and last_login.date() > term_date.date():
                 post_days = (last_login.date() - term_date.date()).days
                 findings.append(make_finding(
@@ -1230,20 +1232,26 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         if not forbidden:
             forbidden = active_sod.get(normalise_dept(dept), [])
         _norm_access = normalise_access(u_access)  # ["Finance","Admin"] etc.
+        # Collect ALL forbidden access levels this account holds — report in one finding
+        _violations = []
         for fb in forbidden:
             _fb_norm = normalise_access(fb)
             _fb_canonical = _fb_norm[0] if _fb_norm else fb
             if (_fb_canonical in _norm_access or
                     fb.lower() in u_access.lower() or
                     any(fb.lower() in a.lower() for a in _norm_access)):
-                findings.append(make_finding(
-                    row_dict, "Toxic Access (SoD Violation)",
-                    f"'{dept}' user holds '{u_access}'. "
-                    f"'{fb}' access is forbidden for '{dept}' under SoD policy — "
-                    f"this user can initiate and approve without oversight.",
-                    days_idle, selected_fw=selected_fw,
-                ))
-                break   # one SoD finding per account per pass
+                _violations.append(fb)
+        if _violations:
+            _viol_str = ", ".join(_violations)
+            findings.append(make_finding(
+                row_dict, "Toxic Access (SoD Violation)",
+                f"'{dept}' user holds '{u_access}'. "
+                f"Forbidden access detected: '{_viol_str}' — "
+                f"SoD policy prohibits this combination for '{dept}'. "
+                f"This user can initiate and approve without oversight.",
+                days_idle, selected_fw=selected_fw,
+            ))
+            _sod_flagged_emails.add(u_email)  # mark so superuser check skips this account
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 10: Privilege creep (4+ roles)
@@ -1263,10 +1271,9 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # This prevents double-counting where SoD and superuser both fire.
         # ═══════════════════════════════════════════════════════════════════
         is_it_dept = is_it_department(dept)  # intelligent IT dept detection
-        _already_sod = any(
-            f.get("Email","").lower() == u_email and f.get("IssueType") == "Toxic Access (SoD Violation)"
-            for f in findings[-20:]  # only check recent findings for performance
-        )
+        # Check if this account was already flagged for SoD — use full findings list
+        # Track via a set for O(1) lookup instead of scanning the list
+        _already_sod = u_email in _sod_flagged_emails
         if not _already_sod:
             for hr_kw in HIGH_RISK_ACCESS:
                 if hr_kw.lower() in u_access.lower() and not is_it_dept:
@@ -1293,15 +1300,20 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 13: Duplicate system account
-        # Pre-computed before loop so scope boundary doesn't hide duplicates
+        # Only flag the SECOND+ occurrence — first occurrence is the primary account
         # ═══════════════════════════════════════════════════════════════════
         if u_email in dup_set:
-            findings.append(make_finding(
-                row_dict, "Duplicate System Access",
-                f"'{u_email}' appears {int(email_freq[u_email])}x in the system access file. "
-                f"Multiple active account IDs for one person.",
-                days_idle, selected_fw=selected_fw,
-            ))
+            if u_email in seen_duplicates:
+                # This is the extra occurrence — flag it
+                findings.append(make_finding(
+                    row_dict, "Duplicate System Access",
+                    f"'{u_email}' appears {int(email_freq[u_email])}x in the system access file. "
+                    f"This is a duplicate account — only one account per person is permitted.",
+                    days_idle, selected_fw=selected_fw,
+                ))
+            else:
+                # First occurrence — mark as seen, do not flag
+                seen_duplicates.add(u_email)
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 14: Excessive multi-system access
