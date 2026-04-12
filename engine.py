@@ -778,6 +778,104 @@ def is_it_department(raw_dept):
     )
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  EMPLOYMENT STATUS NORMALISATION
+#  Maps every real-world HR status variation to: Active | Terminated | On Leave
+# ─────────────────────────────────────────────────────────────────────────────
+TERMINATED_STATUSES = {
+    # Standard
+    "terminated","resigned","redundant","inactive","dismissed","discharged",
+    # Leaver variations
+    "leaver","left","ex-employee","ex employee","former employee","former",
+    "separated","separation","offboarded","offboard","exited","exit",
+    "departed","departed employee","no longer employed","not employed",
+    # Contract ended
+    "contract ended","contract expired","contract complete","contract finished",
+    "end of contract","contract terminated","assignment ended","assignment complete",
+    # Other termination types
+    "dismissed","dismissal","gross misconduct","misconduct","let go",
+    "laid off","layoff","made redundant","voluntary redundancy","compulsory redundancy",
+    "early retirement","retired","retirement","deceased","death",
+    "withdrawn","closed","ended","ceased","deactivated","disabled","revoked",
+    "deleted","removed","archived","historical",
+}
+
+ON_LEAVE_STATUSES = {
+    # Parental leave
+    "maternity","maternity leave","paternity","paternity leave",
+    "parental leave","shared parental leave","adoption leave",
+    # Other leave
+    "sabbatical","garden leave","gardening leave","secondment",
+    "furlough","furloughed","loa","leave of absence","on leave",
+    "long term sick","long-term sick","sick leave","medical leave",
+    "career break","study leave","unpaid leave","extended leave",
+    "suspension","suspended","compassionate leave",
+}
+
+ACTIVE_STATUSES = {
+    "active","employed","current","permanent","full time","full-time",
+    "part time","part-time","probation","probationary","working",
+    "fixed term","fixed-term","casual","temporary active","new starter",
+}
+
+def normalise_status(raw_status):
+    """
+    Convert any HR employment status to canonical form.
+    Returns: 'terminated' | 'on_leave' | 'active'
+    """
+    if not raw_status or str(raw_status).strip().lower() in ("nan","none",""):
+        return "active"  # assume active if blank
+    clean = str(raw_status).strip().lower()
+    if clean in TERMINATED_STATUSES:
+        return "terminated"
+    if clean in ON_LEAVE_STATUSES:
+        return "on_leave"
+    # Partial match for compound statuses
+    for term in TERMINATED_STATUSES:
+        if term in clean:
+            return "terminated"
+    for leave in ON_LEAVE_STATUSES:
+        if leave in clean:
+            return "on_leave"
+    return "active"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  CONTRACTOR TYPE NORMALISATION
+#  Maps every real-world contractor variation to canonical "contractor"
+# ─────────────────────────────────────────────────────────────────────────────
+CONTRACTOR_TYPES = {
+    "contractor","contract","contracting",
+    "agency","agency worker","agency staff","agency employee",
+    "interim","interim manager","interim director","interim worker",
+    "consultant","consulting","consultancy",
+    "freelance","freelancer","freelancing",
+    "temporary","temp","temporary worker","temporary staff","temp worker",
+    "fixed term","fixed-term","ftc","fixed term contract","fixed-term contract",
+    "third party","third-party","3rd party","vendor","outsourced","outsource",
+    "contingent","contingent worker","contingent staff",
+    "associate","independent","independent contractor",
+    "self employed","self-employed","sole trader",
+    "zero hours","zero-hours","casual","casual worker","casual staff",
+    "gig","gig worker","contract worker","contract staff",
+    "statement of work","sow","body shop",
+}
+
+def is_contractor(raw_contract_type):
+    """
+    Returns True if the contract type indicates a non-permanent worker.
+    """
+    if not raw_contract_type or str(raw_contract_type).strip().lower() in ("nan","none",""):
+        return False
+    clean = str(raw_contract_type).strip().lower()
+    if clean in CONTRACTOR_TYPES:
+        return True
+    for ct in CONTRACTOR_TYPES:
+        if ct in clean:
+            return True
+    return False
+
 SOD_RULES = {
     "Sales":             ["Admin","Finance","Payroll","DBAdmin","HR"],
     "Marketing":         ["Admin","DBAdmin","Payroll","Finance"],
@@ -984,6 +1082,7 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
               dormant_days, pwd_expiry_days, fuzzy_threshold,
               max_systems, selected_fw, sod_override=None,
               rbac_matrix=None, registry_df=None):
+    # Returns: (findings_df, excluded_count, missing_col_warnings)
 
     today_dt       = datetime.today()
     scope_start_dt = datetime.combine(scope_start, datetime.min.time())
@@ -1012,9 +1111,54 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
     hr_lookup = hr.set_index("_em")
     hr_emails = set(hr["_em"])
 
+    # ── Secondary lookup: EmployeeID → email (handles email format mismatches) ─
+    _hr_id_col = next((c for c in hr.columns if c.lower().replace(" ","").replace("_","")
+                       in ("employeeid","empid","staffid","workerid","personid","staffno",
+                           "employee_number","empno","payrollid")), None)
+    _hr_id_lkp = {}   # {employee_id_lower: hr_email}
+    if _hr_id_col:
+        for _, _r in hr.iterrows():
+            _eid = str(_r.get(_hr_id_col,"")).strip().lower()
+            if _eid and _eid not in ("nan","none",""):
+                _hr_id_lkp[_eid] = str(_r.get("Email","")).strip().lower()
+
+    # ── Secondary lookup: normalised name → email (john.smith → john smith) ───
+    _hr_name_lkp = {}  # {normalised_name: hr_email}
+    for _, _r in hr.iterrows():
+        _nm = str(_r.get("FullName","")).strip().lower()
+        if _nm and _nm not in ("nan","none",""):
+            _hr_name_lkp[_nm] = str(_r.get("Email","")).strip().lower()
+
     # ── Normalise System ──────────────────────────────────────────────────────
     sys = sys_df.copy()
     sys["_em"] = sys["Email"].str.strip().str.lower()
+
+    # ── Detect missing columns — build warnings for auditor ───────────────────
+    missing_col_warnings = []
+    if "LastLoginDate" not in sys.columns or sys["LastLoginDate"].isna().all():
+        missing_col_warnings.append(
+            "⚠️ LastLoginDate column not found or empty. "
+            "Dormant account check could not run. "
+            "All accounts should be treated as potentially dormant until login data is provided."
+        )
+    if "MFA" not in sys.columns or sys["MFA"].isna().all():
+        missing_col_warnings.append(
+            "⚠️ MFA column not found or empty. "
+            "MFA compliance could not be verified for any account. "
+            "Request an MFA status report from IT."
+        )
+    if "PasswordLastSet" not in sys.columns or sys["PasswordLastSet"].isna().all():
+        missing_col_warnings.append(
+            "⚠️ PasswordLastSet column not found or empty. "
+            "Password expiry check could not run. "
+            "Request password age report from Active Directory."
+        )
+    if "SystemName" not in sys.columns or sys["SystemName"].isna().all():
+        missing_col_warnings.append(
+            "⚠️ SystemName column not found or empty. "
+            "Excessive multi-system access check could not run. "
+            "Ensure UAL includes the source system for each account."
+        )
 
     # Pre-compute duplicates — only flag genuine duplicate provisioning
     # Exclude service account patterns which legitimately appear on multiple systems
@@ -1152,40 +1296,84 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # CHECK 3: Orphaned account / Near-match email
         # ═══════════════════════════════════════════════════════════════════
         if u_email not in hr_emails:
-            best_score, best_match = 0, None
-            for he in hr_emails:
-                s = fuzz.ratio(u_email, he)
-                if s > best_score:
-                    best_score, best_match = s, he
+            # ── Try secondary matching before flagging as orphaned ─────────────
+            _resolved = None
 
-            if best_score >= fuzzy_threshold:
-                findings.append(make_finding(
-                    row_dict, "Near-Match Email",
-                    f"'{u_email}' is {best_score}% similar to HR email '{best_match}'. "
-                    f"Possible typo, alias or name change — verify before raising as orphan.",
-                    days_idle, selected_fw=selected_fw,
-                ))
+            # Try 1: EmployeeID match — most reliable when email formats differ
+            _eid_col = next((c for c in row.index if str(c).lower().replace(" ","").replace("_","")
+                             in ("employeeid","empid","staffid","workerid","personid",
+                                 "staffno","employeenumber","empno","payrollid")), None)
+            if _eid_col:
+                _eid_val = str(row.get(_eid_col,"")).strip().lower()
+                if _eid_val and _eid_val not in ("nan","none","") and _eid_val in _hr_id_lkp:
+                    _resolved = _hr_id_lkp[_eid_val]
+
+            # Try 2: Name derived from email prefix → match HR FullName
+            # Handles: j.smith → John Smith, jsmith → John Smith, john.s → John Smith
+            if not _resolved:
+                _prefix = u_email.split("@")[0].lower()
+                _parts  = _prefix.replace("_",".").replace("-",".").split(".")
+                for _hr_name, _hr_email in _hr_name_lkp.items():
+                    _np = _hr_name.split()
+                    if len(_np) >= 2:
+                        _fn, _ln = _np[0].lower(), _np[-1].lower()
+                        # Handle dotted prefixes: john.smith, j.smith, john.s
+                        _dot_match = (len(_parts) >= 2 and (
+                            (_parts[0]==_fn and _parts[-1]==_ln) or
+                            (len(_parts[0])==1 and _parts[0]==_fn[0] and _parts[-1]==_ln) or
+                            (_parts[0]==_fn and len(_parts[-1])==1 and _parts[-1]==_ln[0])
+                        ))
+                        # Handle no-dot prefixes: jsmith, johnsmith, jsmith
+                        _nodot_match = (
+                            _prefix == f"{_fn[0]}{_ln}" or      # jsmith
+                            _prefix == f"{_fn}{_ln[0]}" or      # johns
+                            _prefix == f"{_fn}{_ln}"             # johnsmith
+                        )
+                        if _dot_match or _nodot_match:
+                            _resolved = _hr_email
+                            break
+
+            if _resolved and _resolved in hr_emails:
+                # Matched via EmployeeID or name — treat as known employee
+                u_email = _resolved
+                row_dict["Email"] = _resolved
+                # Fall through to HR checks below — do NOT flag as orphaned
             else:
-                findings.append(make_finding(
-                    row_dict, "Orphaned Account",
-                    f"'{u_email}' has no record in the HR master. "
-                    f"Likely a leaver, ex-contractor or ghost account still with active access.",
-                    days_idle, selected_fw=selected_fw,
-                ))
-            continue   # no HR record = skip all deeper checks
+                # Truly not in HR — try near-match then orphaned
+                best_score, best_match = 0, None
+                for he in hr_emails:
+                    s = fuzz.ratio(u_email, he)
+                    if s > best_score:
+                        best_score, best_match = s, he
 
-        # ─── Account IS in HR — run all deeper checks ─────────────────────
+                if best_score >= fuzzy_threshold:
+                    findings.append(make_finding(
+                        row_dict, "Near-Match Email",
+                        f"'{u_email}' is {best_score}% similar to HR email '{best_match}'. "
+                        f"Possible typo, alias or name change — verify before raising as orphan.",
+                        days_idle, selected_fw=selected_fw,
+                    ))
+                else:
+                    findings.append(make_finding(
+                        row_dict, "Orphaned Account",
+                        f"No HR record found. Not matched by email, EmployeeID or name. "
+                        f"Likely a leaver, ex-contractor or ghost account with active access.",
+                        days_idle, selected_fw=selected_fw,
+                    ))
+                continue   # no HR record = skip all deeper checks        # ─── Account IS in HR — run all deeper checks ─────────────────────
         hr_row     = hr_lookup.loc[u_email]
         _raw_dept  = str(hr_row.get("Department", "Unknown")).strip()
         dept       = normalise_dept(_raw_dept)   # "Finance & Accounting" → "Finance"
-        emp_status = str(hr_row.get("EmploymentStatus", "Active")).strip().lower()
-        contract   = str(hr_row.get("ContractType",     "")).strip().lower()
+        _raw_status  = str(hr_row.get("EmploymentStatus", "Active")).strip()
+        emp_status   = normalise_status(_raw_status)   # "Leaver" → "terminated" etc.
+        _raw_contract = str(hr_row.get("ContractType","")).strip()
+        contract      = _raw_contract.strip().lower()   # kept for backwards compat
         term_date  = parse_date(hr_row.get("TerminationDate"))
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 4 & 5: Terminated employee / Post-termination login
         # ═══════════════════════════════════════════════════════════════════
-        if emp_status in ("terminated", "resigned", "inactive", "redundant"):
+        if emp_status == "terminated":  # normalise_status handles all variations
             if last_login and term_date and last_login.date() > term_date.date():
                 post_days = (last_login.date() - term_date.date()).days
                 findings.append(make_finding(
@@ -1211,7 +1399,7 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         _join_raw = hr_row.get("JoinDate") or hr_row.get("StartDate") or hr_row.get("HireDate")
         _join_dt  = parse_date(_join_raw)
         _days_join = safe_days(_join_dt, scope_end_dt) if _join_dt else 9999
-        if ("contractor" in contract and term_date is None
+        if (is_contractor(_raw_contract) and term_date is None
                 and (_days_join is None or _days_join > 30)):
             account_issues.append((
                 "Contractor Without Expiry Date",
@@ -1383,14 +1571,14 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
 
     # ── Build findings DataFrame ──────────────────────────────────────────────
     if not findings:
-        return pd.DataFrame(), excluded_count
+        return pd.DataFrame(), excluded_count, missing_col_warnings
 
     df = pd.DataFrame(findings)
     df.insert(0, "ScopeTo",   str(scope_end))
     df.insert(0, "ScopeFrom", str(scope_start))
     df["_ord"] = df["Severity"].map(sev_order).fillna(9)
     df = df.sort_values("_ord").drop(columns="_ord")
-    return df, excluded_count
+    return df, excluded_count, missing_col_warnings
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  AUDIT OPINION GENERATOR
