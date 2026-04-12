@@ -796,6 +796,12 @@ GENERIC_PATTERNS = [
     "noreply","no-reply","helpdesk","info@","support@","it@",
     "backup","batch","system","root","default","guest","app.",
 ]
+# Patterns checked only against email PREFIX (before @) — not full email or name
+# This prevents "testco.com" or "latest" matching "test"
+GENERIC_PREFIX_PATTERNS = [
+    "admin","test","temp","generic","shared","helpdesk","noreply",
+    "no-reply","info","support","backup","batch","default","guest",
+]
 
 HIGH_RISK_ACCESS = ["Admin","SuperAdmin","DBAdmin","Root","FullControl","SysAdmin"]
 
@@ -1105,9 +1111,18 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
             excluded_count += 1
             continue
 
-        combined   = (u_email + " " + u_name).lower()
-        is_svc     = any(p in combined for p in ["svc","service","system","batch","backup","noreply","no-reply","root","app."])
-        is_generic = any(p in combined for p in GENERIC_PATTERNS)
+        # Check generic/service patterns against email PREFIX only — not full domain
+        # This prevents "testco.com" matching "test" or "systemsco.com" matching "system"
+        email_prefix = u_email.split("@")[0].lower()  # e.g. "john.smith" from "john.smith@company.com"
+        combined     = (u_email + " " + u_name).lower()
+        is_svc     = any(
+            email_prefix.startswith(p)
+            for p in ["svc","service.","service_","batch.","batch_","backup.","noreply","no-reply","app.","system.","system_"]
+        ) or email_prefix in ["svc","batch","backup","root","system","service"]
+        is_generic = (
+            any(email_prefix.startswith(p) for p in GENERIC_PREFIX_PATTERNS) or
+            any(p in email_prefix for p in ["admin","helpdesk","shared","generic","temp","default","guest"])
+        )
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 1 & 2: Generic / Service accounts
