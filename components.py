@@ -1,10 +1,11 @@
 """Shared UI components for 80 — IAM Audit Tool. Dark premium theme v2."""
 
 import streamlit as st
+import streamlit.components.v1 as _stc
 
 GLOBAL_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Inter font — system fallback if CDN blocked */
 
 :root {
   --navy:      #080f1e;
@@ -30,7 +31,17 @@ GLOBAL_CSS = """
 /* ── KILL STREAMLIT DEFAULT CHROME ──────────────────────────────────────── */
 #MainMenu, footer, [data-testid="stDecoration"],
 [data-testid="stToolbar"], [data-testid="stStatusWidget"],
-header[data-testid="stHeader"] { display:none !important; }
+header[data-testid="stHeader"],
+[data-testid="stSidebarNavItems"],
+[data-testid="stPageLink"],
+section[data-testid="stSidebarContent"] [data-testid="stMarkdownContainer"] > div > p:first-child
+{ display:none !important; }
+
+/* Hide Streamlit auto page title at top of content */
+[data-testid="stAppViewBlockContainer"] > div:first-child h1 { display:none !important; }
+
+/* Hide the navigation header shown by st.navigation */
+[data-testid="stSidebarNavSeparator"] { display:none !important; }
 
 /* ── FULL APP BACKGROUND ────────────────────────────────────────────────── */
 html, body,
@@ -220,8 +231,12 @@ NAV_ITEMS = [
 ]
 
 def inject_css():
+    # Use session state to avoid re-injecting on every rerun
+    # but still inject on first load of each page
+    if "css_injected" not in st.session_state:
+        st.session_state.css_injected = False
+    # Always inject — Streamlit clears it between pages
     st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
-
 
 def render_header(active="Home"):
     """
@@ -246,7 +261,7 @@ def render_header(active="Home"):
           transition:all 0.18s;letter-spacing:0.01em;
         ">{icon} {label}</a>"""
 
-    st.markdown(f"""
+    _stc.html(f"""
 <div style="
   width:100%;
   background:rgba(8,15,30,0.95);
@@ -298,36 +313,20 @@ def render_header(active="Home"):
       {nav_html}
     </div>
 
-    <!-- RIGHT: Status pill -->
+    <!-- RIGHT: Minimal wordmark -->
     <div style="
-      display:flex;align-items:center;gap:7px;
-      background:rgba(0,212,160,0.08);
-      border:1px solid rgba(0,212,160,0.2);
-      border-radius:20px;padding:7px 14px;
-    ">
-      <div style="
-        width:6px;height:6px;background:#00d4a0;border-radius:50%;
-        box-shadow:0 0 8px rgba(0,212,160,0.7);flex-shrink:0;
-        animation:pulse 2s infinite;
-      "></div>
-      <span style="
-        font-size:11px;font-weight:700;color:#00d4a0;
-        letter-spacing:0.06em;font-family:'Inter',sans-serif;
-        text-transform:uppercase;white-space:nowrap;
-      ">Engine live · 5K verified</span>
-    </div>
+      font-size:11px;font-weight:500;
+      color:rgba(255,255,255,0.18);
+      font-family:'Inter',sans-serif;
+      letter-spacing:0.06em;
+      white-space:nowrap;
+    ">IAM · 2026</div>
 
   </div>
 </div>
 
-<style>
-@keyframes pulse {{
-  0%,100% {{ box-shadow: 0 0 8px rgba(0,212,160,0.7); }}
-  50%      {{ box-shadow: 0 0 16px rgba(0,212,160,0.4); }}
-}}
-</style>
-""", unsafe_allow_html=True)
 
+""", height=82, scrolling=False)
 
 def render_sidebar_brand():
     """Premium dark sidebar brand block."""
@@ -351,19 +350,9 @@ def render_sidebar_brand():
       <div style="font-size:10px;font-weight:600;color:#4d9fff;letter-spacing:0.1em;text-transform:uppercase;font-family:'Inter',sans-serif;margin-top:2px;">IAM Audit Tool</div>
     </div>
   </div>
-  <div style="
-    background:rgba(0,212,160,0.08);
-    border:1px solid rgba(0,212,160,0.18);
-    border-radius:8px;
-    padding:9px 12px;
-    display:flex;align-items:center;gap:8px;
-  ">
-    <div style="width:5px;height:5px;background:#00d4a0;border-radius:50%;box-shadow:0 0 7px rgba(0,212,160,0.8);flex-shrink:0;"></div>
-    <span style="font-size:10px;font-weight:600;color:#00d4a0;font-family:'Inter',sans-serif;letter-spacing:0.04em;">5,000 accounts · zero false positives</span>
-  </div>
+
 </div>
 """, unsafe_allow_html=True)
-
 
 def stat_card(number, label, sublabel="", color="#4d9fff"):
     return f"""
@@ -382,7 +371,6 @@ def stat_card(number, label, sublabel="", color="#4d9fff"):
     font-family:'Inter',sans-serif;margin-top:8px;">{label}</div>
   {f'<div style="font-size:10px;color:#5a7394;font-family:Inter,sans-serif;margin-top:4px;">{sublabel}</div>' if sublabel else ''}
 </div>"""
-
 
 def section_header(title, subtitle=""):
     sub = f'<div style="font-size:13px;color:#5a7394;font-family:Inter,sans-serif;margin-top:5px;font-weight:400;">{subtitle}</div>' if subtitle else ''
