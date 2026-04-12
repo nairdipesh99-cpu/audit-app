@@ -1049,6 +1049,8 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # Inject derived name back so make_finding picks it up
         if not row_dict.get("FullName") or str(row_dict.get("FullName","")).lower() in ("nan","none",""):
             row_dict["FullName"] = u_name
+        # Collect all issues for this account — one consolidated finding per account
+        account_issues = []   # list of (issue_type, detail, days_inactive, post_term_days)
 
         last_login   = parse_date(row.get("LastLoginDate"))
         pwd_set      = parse_date(row.get("PasswordLastSet"))
@@ -1211,12 +1213,10 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         _days_join = safe_days(_join_dt, scope_end_dt) if _join_dt else 9999
         if ("contractor" in contract and term_date is None
                 and (_days_join is None or _days_join > 30)):
-            findings.append(make_finding(
-                row_dict, "Contractor Without Expiry Date",
-                f"'{u_name}' is a {contract} with no termination/expiry date "
-                f"({int(_days_join) if _days_join else 'unknown'} days in system). "
-                f"Access will persist indefinitely after engagement ends.",
-                days_idle, selected_fw=selected_fw,
+            account_issues.append((
+                "Contractor Without Expiry Date",
+                f"Contractor with no expiry date ({int(_days_join) if _days_join else 'unknown'} days in system). Access will persist indefinitely.",
+                days_idle, None
             ))
         # Note: does NOT continue — contractor can also be dormant, SoD-violating etc.
 
@@ -1224,12 +1224,10 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # CHECK 7: Dormant account
         # ═══════════════════════════════════════════════════════════════════
         if days_idle is not None and days_idle > dormant_days:
-            findings.append(make_finding(
-                row_dict, "Dormant Account",
-                f"No login for {days_idle} days "
-                f"(policy threshold: {dormant_days} days). "
-                f"Last login: {last_login.date() if last_login else 'never recorded'}.",
-                days_idle, selected_fw=selected_fw,
+            account_issues.append((
+                "Dormant Account",
+                f"No login for {days_idle} days (threshold: {dormant_days} days). Last login: {last_login.date() if last_login else 'never recorded'}.",
+                days_idle, None
             ))
 
         # ═══════════════════════════════════════════════════════════════════
@@ -1239,11 +1237,10 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         if "MFA" in sys.columns:
             mfa_disabled = u_mfa in ("disabled", "no", "false", "0", "none", "not enrolled")
             if mfa_disabled:
-                findings.append(make_finding(
-                    row_dict, "MFA Not Enabled",
-                    f"'{u_name}' has MFA recorded as '{row.get('MFA', '')}'. "
-                    f"A single compromised password = full account access.",
-                    days_idle, selected_fw=selected_fw,
+                account_issues.append((
+                    "MFA Not Enabled",
+                    f"MFA recorded as '{row.get('MFA', '')}'. Single compromised password = full account access.",
+                    days_idle, None
                 ))
 
         # ═══════════════════════════════════════════════════════════════════
@@ -1266,26 +1263,22 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
                 _violations.append(fb)
         if _violations:
             _viol_str = ", ".join(_violations)
-            findings.append(make_finding(
-                row_dict, "Toxic Access (SoD Violation)",
-                f"'{dept}' user holds '{u_access}'. "
-                f"Forbidden access detected: '{_viol_str}' — "
-                f"SoD policy prohibits this combination for '{dept}'. "
-                f"This user can initiate and approve without oversight.",
-                days_idle, selected_fw=selected_fw,
+            account_issues.append((
+                "Toxic Access (SoD Violation)",
+                f"Forbidden access '{_viol_str}' for '{dept}' dept. User can initiate and approve without oversight.",
+                days_idle, None
             ))
-            _sod_flagged_emails.add(u_email)  # mark so superuser check skips this account
+            _sod_flagged_emails.add(u_email)
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 10: Privilege creep (4+ roles)
         # ═══════════════════════════════════════════════════════════════════
         roles = [r.strip() for r in u_access.split(",") if r.strip()]
         if len(roles) >= 4:
-            findings.append(make_finding(
-                row_dict, "Privilege Creep",
-                f"User holds {len(roles)} roles: {u_access}. "
-                f"Excess roles likely accumulated from previous positions — violates least-privilege.",
-                days_idle, selected_fw=selected_fw,
+            account_issues.append((
+                "Privilege Creep",
+                f"Holds {len(roles)} roles: {u_access}. Excess access accumulated from previous positions — violates least-privilege.",
+                days_idle, None
             ))
 
         # ═══════════════════════════════════════════════════════════════════
@@ -1300,12 +1293,10 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         if not _already_sod:
             for hr_kw in HIGH_RISK_ACCESS:
                 if hr_kw.lower() in u_access.lower() and not is_it_dept:
-                    findings.append(make_finding(
-                        row_dict, "Super-User / Admin Access",
-                        f"'{dept}' user '{u_name}' holds '{u_access}'. "
-                        f"Admin-level access for a non-IT user requires explicit written CISO approval "
-                        f"and must appear in the Privileged User Registry.",
-                        days_idle, selected_fw=selected_fw,
+                    account_issues.append((
+                        "Super-User / Admin Access",
+                        f"'{dept}' user holds '{u_access}'. Admin rights for non-IT user requires CISO approval and registry entry.",
+                        days_idle, None
                     ))
                     break
 
@@ -1313,12 +1304,10 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # CHECK 12: Password never expired
         # ═══════════════════════════════════════════════════════════════════
         if pwd_days is not None and pwd_days > pwd_expiry_days:
-            findings.append(make_finding(
-                row_dict, "Password Never Expired",
-                f"Password was last set {pwd_days} days ago "
-                f"({pwd_set.date() if pwd_set else 'unknown'}). "
-                f"Policy requires rotation every {pwd_expiry_days} days.",
-                days_idle, selected_fw=selected_fw,
+            account_issues.append((
+                "Password Never Expired",
+                f"Password last set {pwd_days} days ago ({pwd_set.date() if pwd_set else 'unknown'}). Policy requires rotation every {pwd_expiry_days} days.",
+                days_idle, None
             ))
 
         # ═══════════════════════════════════════════════════════════════════
@@ -1328,11 +1317,10 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         if u_email in dup_set:
             if u_email in seen_duplicates:
                 # This is the extra occurrence — flag it
-                findings.append(make_finding(
-                    row_dict, "Duplicate System Access",
-                    f"'{u_email}' appears {int(email_freq[u_email])}x in the system access file. "
-                    f"This is a duplicate account — only one account per person is permitted.",
-                    days_idle, selected_fw=selected_fw,
+                account_issues.append((
+                    "Duplicate System Access",
+                    f"Email appears {int(email_freq[u_email])}x in the system access file. Duplicate account — only one per person permitted.",
+                    days_idle, None
                 ))
             else:
                 # First occurrence — mark as seen, do not flag
@@ -1343,12 +1331,45 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         # ═══════════════════════════════════════════════════════════════════
         if u_email in excess_set:
             n = int(sys_freq[u_email])
-            findings.append(make_finding(
-                row_dict, "Excessive Multi-System Access",
-                f"'{u_email}' has access to {n} systems (threshold: {max_systems}). "
-                f"Likely carries legacy access from previous roles.",
-                days_idle, selected_fw=selected_fw,
+            account_issues.append((
+                "Excessive Multi-System Access",
+                f"Access to {n} systems (threshold: {max_systems}). Likely legacy access from previous roles.",
+                days_idle, None
             ))
+
+
+        # ── CONSOLIDATE all issues for this account into ONE finding ──────────
+        if account_issues:
+            # Determine highest severity
+            SEV_ORDER = {"🔴 CRITICAL": 0, "🟠 HIGH": 1, "🟡 MEDIUM": 2, "⚪ INFO": 3}
+            issue_types   = [i[0] for i in account_issues]
+            issue_details = [i[1] for i in account_issues]
+            issue_idle    = next((i[2] for i in account_issues if i[2] is not None), days_idle)
+
+            # Get severities from REMEDIATION dict
+            severities = [REMEDIATION.get(t, {}).get("severity", "🟡 MEDIUM") for t in issue_types]
+            top_sev    = min(severities, key=lambda s: SEV_ORDER.get(s, 3))
+
+            if len(issue_types) == 1:
+                # Single issue — use normal make_finding
+                primary_type   = issue_types[0]
+                primary_detail = issue_details[0]
+            else:
+                # Multiple issues — consolidate
+                primary_type   = issue_types[0]   # lead with highest severity issue
+                issues_list    = " | ".join([f"{t}: {d}" for t, d in zip(issue_types, issue_details)])
+                primary_detail = f"MULTIPLE ISSUES ({len(issue_types)}): {issues_list}"
+
+            f = make_finding(
+                row_dict, primary_type, primary_detail,
+                issue_idle, selected_fw=selected_fw,
+            )
+            # Override severity to highest found across all issues
+            f["Severity"]    = top_sev
+            # Add all issue types as a pipe-separated string for filtering
+            f["AllIssues"]   = " | ".join(issue_types)
+            f["IssueCount"]  = len(issue_types)
+            findings.append(f)
 
     # ── RBAC Matrix checks ───────────────────────────────────────────────────
     if rbac_matrix:
