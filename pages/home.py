@@ -1,12 +1,16 @@
 """80 — IAM Audit Tool | Home — Premium dark v2"""
 
 import streamlit as st
-from components import render_header, render_sidebar_brand, stat_card, section_header
+from components import render_header, render_sidebar_brand, stat_card, section_header, inject_css
+
+# inject_css must be first — sets up HTML rendering context
+inject_css()
+
+# Header before sidebar
+render_header(active="Home")
 
 with st.sidebar:
     render_sidebar_brand()
-
-render_header(active="Home")
 
 # ── HERO ─────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -90,19 +94,7 @@ st.markdown("""
     ">See how it works</a>
   </div>
 
-  <!-- Trust note -->
-  <div style="
-    margin-top:28px;
-    display:flex;align-items:center;gap:8px;
-  ">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <circle cx="7" cy="7" r="6.5" stroke="#00d4a0" stroke-opacity="0.4"/>
-      <path d="M4 7l2 2 4-4" stroke="#00d4a0" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <span style="font-size:12px;color:#5a7394;font-family:'Inter',sans-serif;">
-      Stress tested on 5,000 employees · 1,108 findings · zero false positives
-    </span>
-  </div>
+
 </div>
 """, unsafe_allow_html=True)
 
@@ -115,7 +107,7 @@ with c2:
 with c3:
     st.markdown(stat_card("9", "Workpaper sheets", "External auditor ready", "#ffb347"), unsafe_allow_html=True)
 with c4:
-    st.markdown(stat_card("100%", "Population tested", "Not a 25-account sample", "#ff4d5e"), unsafe_allow_html=True)
+    st.markdown(stat_card("< 10 min", "Time to results", "Upload to workpaper", "#ff4d5e"), unsafe_allow_html=True)
 
 # ── WHAT IS 80 ────────────────────────────────────────────────────────────────
 st.markdown(section_header("What is 80?",
