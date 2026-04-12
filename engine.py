@@ -798,10 +798,6 @@ GENERIC_PATTERNS = [
 ]
 # Patterns checked only against email PREFIX (before @) — not full email or name
 # This prevents "testco.com" or "latest" matching "test"
-GENERIC_PREFIX_PATTERNS = [
-    "admin","test","temp","generic","shared","helpdesk","noreply",
-    "no-reply","info","support","backup","batch","default","guest",
-]
 
 HIGH_RISK_ACCESS = ["Admin","SuperAdmin","DBAdmin","Root","FullControl","SysAdmin"]
 
@@ -1111,24 +1107,36 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
             excluded_count += 1
             continue
 
-        # Check generic/service patterns against email PREFIX only — not full domain
-        # This prevents "testco.com" matching "test" or "systemsco.com" matching "system"
-        email_prefix = u_email.split("@")[0].lower()  # e.g. "john.smith" from "john.smith@company.com"
-        combined     = (u_email + " " + u_name).lower()
-        is_svc     = any(
-            email_prefix.startswith(p)
-            for p in ["svc","service.","service_","batch.","batch_","backup.","noreply","no-reply","app.","system.","system_"]
-        ) or email_prefix in ["svc","batch","backup","root","system","service"]
-        is_generic = (
-            any(email_prefix.startswith(p) for p in GENERIC_PREFIX_PATTERNS) or
-            any(p in email_prefix for p in ["admin","helpdesk","shared","generic","temp","default","guest"])
-        )
+        # ── Generic/service detection — email PREFIX only, never the domain ──────
+        # prefix = "john.smith" from "john.smith@company.com"
+        # This prevents @testco.com, @systemsco.com, @adminsoftware.com from matching
+        email_prefix = u_email.split("@")[0].lower()
+
+        # Service account: starts with svc/batch/backup etc OR is exactly one of these
+        _SVC_STARTS = ("svc.","svc_","svc-","service.","service_","batch.","batch_",
+                       "backup.","noreply.","noreply","no-reply","app.","system.","system_")
+        _SVC_EXACT  = {"svc","batch","backup","root","system","service","noreply"}
+        is_svc = (email_prefix in _SVC_EXACT or
+                  any(email_prefix.startswith(p) for p in _SVC_STARTS))
+
+        # Generic account: shared/helpdesk/admin/test@ style accounts
+        # "test" only matches if the ENTIRE prefix is "test" or starts with "test."
+        # NOT if "test" appears somewhere in the middle like "latest" or "protest"
+        _GEN_EXACT  = {"test","admin","helpdesk","shared","generic","temp","default",
+                       "guest","info","support","administrator","administration",
+                       "postmaster","abuse","spam","webmaster","no-reply","mailer-daemon",
+                       "it","security","network","devops","cloud","system","service"}
+        _GEN_STARTS = ("test.","test_","test-","admin.","admin_","admin-",
+                       "helpdesk.","shared.","shared_","generic.","temp.",
+                       "default.","guest.","info@","support.")
+        is_generic = (email_prefix in _GEN_EXACT or
+                      any(email_prefix.startswith(p) for p in _GEN_STARTS))
 
         # ═══════════════════════════════════════════════════════════════════
         # CHECK 1 & 2: Generic / Service accounts
         # Checked FIRST — these never have HR records and that's expected
         # ═══════════════════════════════════════════════════════════════════
-        if is_generic:
+        if is_svc or is_generic:
             itype = "Service / System Account" if is_svc else "Shared / Generic Account"
             findings.append(make_finding(
                 row_dict, itype,
