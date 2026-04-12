@@ -883,19 +883,12 @@ SOD_RULES = {
     "Finance":           ["Admin","DBAdmin"],
     "HR":                ["Admin","DBAdmin","Finance"],
     "Operations":        ["DBAdmin","Finance"],
-    "IT":                ["HR","Payroll"],
+    "IT":                ["Payroll"],          # IT legitimately manages HR systems — HR removed
     "Procurement":       ["Finance","DBAdmin"],
     "Risk & Compliance": ["Admin","DBAdmin"],
     "Legal":             ["Admin","DBAdmin","Finance"],
 }
 
-GENERIC_PATTERNS = [
-    "admin","test","temp","generic","shared","service","svc",
-    "noreply","no-reply","helpdesk","info@","support@","it@",
-    "backup","batch","system","root","default","guest","app.",
-]
-# Patterns checked only against email PREFIX (before @) — not full email or name
-# This prevents "testco.com" or "latest" matching "test"
 
 HIGH_RISK_ACCESS = ["Admin","SuperAdmin","DBAdmin","Root","FullControl","SysAdmin"]
 
@@ -1160,15 +1153,39 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
             "Ensure UAL includes the source system for each account."
         )
 
-    # Pre-compute duplicates — only flag genuine duplicate provisioning
-    # Exclude service account patterns which legitimately appear on multiple systems
-    email_freq  = sys["_em"].value_counts()
+    # Pre-compute duplicates — PER SYSTEM not per file
+    # Real UALs are multi-system: same person in AD + Salesforce + SAP is NORMAL
+    # Only flag if same email appears more than once in the SAME SystemName
+    # If no SystemName column, fall back to file-level dedup
     import re as _re
     _svc_pat = r"^(svc[._]|svc$|service[._]|batch[._]|noreply|system[._]|backup[._]|admin[._]shared|generic)"
-    dup_set = set(
-        em for em, cnt in email_freq.items()
-        if cnt > 1 and not _re.match(_svc_pat, str(em), _re.IGNORECASE)
-    )
+    email_freq = sys["_em"].value_counts()   # kept for display in finding detail
+
+    if "SystemName" in sys.columns and sys["SystemName"].notna().any():
+        # Per-system duplicate detection
+        # dup_set = emails that appear >1 time within any single system
+        _sys_dup = (
+            sys.groupby(["SystemName", "_em"])
+            .size()
+            .reset_index(name="_cnt")
+        )
+        _sys_dup = _sys_dup[_sys_dup["_cnt"] > 1]
+        _svc_re  = _re.compile(_svc_pat, _re.IGNORECASE)
+        dup_set  = set(
+            em for em in _sys_dup["_em"].unique()
+            if not _svc_re.match(str(em))
+        )
+        # Also track which system each duplicate is in (for finding detail)
+        _dup_system = {}
+        for _, row in _sys_dup.iterrows():
+            _dup_system[row["_em"]] = row["SystemName"]
+    else:
+        # No SystemName column — fall back to file-level duplicate detection
+        dup_set = set(
+            em for em, cnt in email_freq.items()
+            if cnt > 1 and not _re.match(_svc_pat, str(em), _re.IGNORECASE)
+        )
+        _dup_system = {}
 
     # Pre-compute multi-system BEFORE scope filtering
     if "SystemName" in sys.columns:
@@ -1340,8 +1357,10 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
                 # Fall through to HR checks below — do NOT flag as orphaned
             else:
                 # Truly not in HR — try near-match then orphaned
+                # Cap to first 5000 HR emails for performance on large populations
                 best_score, best_match = 0, None
-                for he in hr_emails:
+                _hr_sample = list(hr_emails)[:5000]
+                for he in _hr_sample:
                     s = fuzz.ratio(u_email, he)
                     if s > best_score:
                         best_score, best_match = s, he
@@ -1445,9 +1464,11 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         for fb in forbidden:
             _fb_norm = normalise_access(fb)
             _fb_canonical = _fb_norm[0] if _fb_norm else fb
+            # Use normalised access list comparison only — avoids substring false positives
+            # e.g. "Finance" must not match "FinanceAdmin" or "UnauthorisedFinance"
             if (_fb_canonical in _norm_access or
-                    fb.lower() in u_access.lower() or
-                    any(fb.lower() in a.lower() for a in _norm_access)):
+                    any(_fb_canonical.lower() == a.lower() for a in _norm_access) or
+                    any(fb.lower() == a.lower() for a in _norm_access)):
                 _violations.append(fb)
         if _violations:
             _viol_str = ", ".join(_violations)
@@ -1505,9 +1526,12 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         if u_email in dup_set:
             if u_email in seen_duplicates:
                 # This is the extra occurrence — flag it
+                _dup_sys_name = _dup_system.get(u_email, "same system")
+                _dup_count = int(email_freq.get(u_email, 2))
                 account_issues.append((
                     "Duplicate System Access",
-                    f"Email appears {int(email_freq[u_email])}x in the system access file. Duplicate account — only one per person permitted.",
+                    f"Email appears more than once in '{_dup_sys_name}'. "
+                    f"Multiple active account IDs for one person in the same system — only one account permitted.",
                     days_idle, None
                 ))
             else:
