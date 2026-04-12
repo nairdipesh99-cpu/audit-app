@@ -1,225 +1,263 @@
-"""80 — IAM Audit Tool | How to Use page"""
+"""80 — IAM Audit Tool | How to Use"""
 
 import streamlit as st
-from components import render_header, render_sidebar_brand
+from components import inject_css, render_header, render_sidebar_brand, section_header
+
+inject_css()
+render_header(active="How to Use")
 
 with st.sidebar:
     render_sidebar_brand()
 
-render_header()
+# ── PAGE HERO ─────────────────────────────────────────────────────────────────
+st.markdown("""
+<div style="
+  background:#0d1628;
+  border:1px solid rgba(255,255,255,0.07);
+  border-radius:20px;
+  padding:48px 52px;
+  margin-bottom:36px;
+  border-left:3px solid #00d4a0;
+">
+  <div style="font-size:11px;font-weight:700;color:#00d4a0;letter-spacing:0.1em;
+    text-transform:uppercase;font-family:'Inter',sans-serif;margin-bottom:14px;">How to Use</div>
+  <div style="font-size:38px;font-weight:900;color:#ffffff;letter-spacing:-0.04em;
+    line-height:1.1;font-family:'Inter',sans-serif;margin-bottom:16px;">
+    From documents to workpaper<br>in four steps.
+  </div>
+  <div style="font-size:15px;color:#5a7394;line-height:1.8;max-width:520px;
+    font-family:'Inter',sans-serif;">
+    A complete walkthrough from document collection through to finished
+    workpaper-ready Excel report.
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-st.markdown("## How to use 80")
-st.caption("A complete walkthrough from document collection to finished workpaper.")
+# ── FOUR STEPS OVERVIEW ───────────────────────────────────────────────────────
+steps_overview = [
+    ("01", "Collect documents",  "Request from client before fieldwork", "#4d9fff"),
+    ("02", "Upload to 80",       "Single upload zone — all files at once", "#4d9fff"),
+    ("03", "Set scope & run",    "Confirm population, set dates, click GO", "#00d4a0"),
+    ("04", "Review & download",  "Findings on screen, workpaper in one click", "#00d4a0"),
+]
+cols = st.columns(4, gap="small")
+for col, (num, title, sub, color) in zip(cols, steps_overview):
+    with col:
+        st.markdown(f"""
+<div style="background:#0d1628;border:1px solid rgba(255,255,255,0.07);
+  border-radius:14px;padding:24px 20px;text-align:center;
+  border-top:2px solid {color};">
+  <div style="font-size:32px;font-weight:900;color:{color};
+    letter-spacing:-0.04em;font-family:'Inter',sans-serif;line-height:1;
+    margin-bottom:12px;opacity:0.6;">{num}</div>
+  <div style="font-size:13px;font-weight:700;color:#ffffff;
+    font-family:'Inter',sans-serif;margin-bottom:8px;">{title}</div>
+  <div style="font-size:11px;color:#5a7394;font-family:'Inter',sans-serif;
+    line-height:1.6;">{sub}</div>
+</div>""", unsafe_allow_html=True)
 
-st.divider()
+# ── STEP 1 ────────────────────────────────────────────────────────────────────
+st.markdown(section_header("Step 1 — Collect your documents",
+    "Request these from the client before fieldwork begins. 80 detects document type from the filename automatically."),
+    unsafe_allow_html=True)
 
-# ── Overview ──────────────────────────────────────────────────────────────────
-c1, c2, c3, c4 = st.columns(4)
-c1.info("**Step 1**\n\nCollect your documents before fieldwork begins")
-c2.info("**Step 2**\n\nUpload all files to the single document zone")
-c3.info("**Step 3**\n\nConfirm population, set scope, click GO")
-c4.info("**Step 4**\n\nReview findings and download your workpaper")
-
-st.divider()
-
-# ── Step 1: Documents ─────────────────────────────────────────────────────────
-st.markdown("### Step 1 — Collect your documents")
-st.markdown("Request these from the client before fieldwork begins. Name your files clearly — 80 detects document type from the filename automatically.")
-
-col1, col2 = st.columns(2)
+col1, col2 = st.columns(2, gap="medium")
 with col1:
-    st.markdown("**Required — tool will not run without these**")
     st.markdown("""
-| File | What it must contain |
-|---|---|
-| `HR_Master_2025.xlsx` | All employees: Email, FullName, Department, EmploymentStatus, ContractType, TerminationDate |
-| `System_Access_2025.xlsx` | All accounts: Email, AccessLevel, LastLoginDate, PasswordLastSet, MFA, AccountCreatedDate |
-    """)
-    st.error("Request the HR extract directly from HR, not from IT. Request the system access extract directly from IT with written instruction: full unfiltered export — do not exclude service accounts, disabled accounts or contractor accounts.")
+<div style="background:#0d1628;border:1px solid rgba(255,77,94,0.2);
+  border-radius:14px;padding:28px;border-top:2px solid #ff4d5e;margin-bottom:12px;">
+  <div style="font-size:11px;font-weight:700;color:#ff4d5e;letter-spacing:0.08em;
+    text-transform:uppercase;font-family:'Inter',sans-serif;margin-bottom:16px;">Required</div>
+""", unsafe_allow_html=True)
+    req_files = [
+        ("HR_Master.xlsx", "All employees: Email, FullName, Department, EmploymentStatus, ContractType, TerminationDate"),
+        ("System_Access.xlsx", "All accounts: Email, AccessLevel, LastLoginDate, PasswordLastSet, MFA, AccountCreatedDate"),
+    ]
+    for fname, desc in req_files:
+        st.markdown(f"""
+<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+  <div style="font-size:12px;font-weight:700;color:#ffffff;
+    font-family:'JetBrains Mono',monospace;margin-bottom:5px;">{fname}</div>
+  <div style="font-size:12px;color:#5a7394;font-family:'Inter',sans-serif;
+    line-height:1.5;">{desc}</div>
+</div>""", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.error("Request HR extract directly from HR — not from IT. Request the system access extract from IT with written instruction: full unfiltered export, do not exclude service accounts, disabled accounts or contractor accounts.")
 
 with col2:
-    st.markdown("**Recommended — improves finding quality significantly**")
     st.markdown("""
-| File | How 80 uses it |
-|---|---|
-| `SOA_ISO27001.xlsx` | Extracts SoD rules — findings cite client's own policy |
-| `Access_Control_Policy.pdf` | Cited in framework references on every finding |
-| `JML_Procedure.pdf` | Cited when terminated accounts are found active |
-| `SoD_Matrix.xlsx` | Overrides hardcoded SoD rules with client's own matrix |
-| `Risk_Register.xlsx` | Context for known vs newly identified risks |
-    """)
+<div style="background:#0d1628;border:1px solid rgba(0,212,160,0.2);
+  border-radius:14px;padding:28px;border-top:2px solid #00d4a0;margin-bottom:12px;">
+  <div style="font-size:11px;font-weight:700;color:#00d4a0;letter-spacing:0.08em;
+    text-transform:uppercase;font-family:'Inter',sans-serif;margin-bottom:16px;">Recommended</div>
+""", unsafe_allow_html=True)
+    rec_files = [
+        ("SOA_ISO27001.xlsx",    "Extracts SoD rules — findings cite client's own policy"),
+        ("RBAC_Matrix.xlsx",     "Enables RBAC check — compares access against role entitlements"),
+        ("Privileged_Registry.xlsx", "Enables unauthorised admin check"),
+        ("Access_Control_Policy.pdf", "Cited in framework references on every finding"),
+        ("JML_Procedure.pdf",    "Cited when terminated accounts are found active"),
+    ]
+    for fname, desc in rec_files:
+        st.markdown(f"""
+<div style="padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+  <div style="font-size:12px;font-weight:700;color:#ffffff;
+    font-family:'JetBrains Mono',monospace;margin-bottom:5px;">{fname}</div>
+  <div style="font-size:12px;color:#5a7394;font-family:'Inter',sans-serif;
+    line-height:1.5;">{desc}</div>
+</div>""", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-st.divider()
-
-# ── Step 2: Upload ────────────────────────────────────────────────────────────
-st.markdown("### Step 2 — Upload all documents")
-st.markdown("""
-Go to the **Use the Tool** page. You will see a single upload zone at the top.
-
-Drop all your files in at once — HR Master, System Access, SOA, policies, procedures, everything together.
-80 reads the filename of each file and assigns it automatically:
-
-- File containing `HR_Master` → assigned as HR Master
-- File containing `System_Access` → assigned as System Access  
-- File containing `SOA` or `ISO27001` → parsed for SoD rules and control references
-- File containing `Access_Control` or `Policy` → parsed and cited in framework tab
-- File containing `JML` or `Procedure` → parsed and cited in offboarding findings
-- Anything else → available in document intelligence panel
-
-If 80 cannot detect the file type from the filename, a manual selector appears so you can assign it yourself.
-""")
-
-with st.expander("Using a legacy system that only produces screenshots or PDFs?"):
-    st.markdown("""
-Expand the **Legacy system upload** section below the main upload zone.
-Upload your screenshot or PDF. Click **Extract data from image**.
-
-AI reads the image and extracts account data — usernames, access levels, login dates — 
-and structures it into the correct format. Download it as an Excel file, then upload it as your 
-System Access file to run the full 15 checks.
-
-This works on green-screen terminals, printed PDF reports, scanned documents — any image where 
-account data is visible.
-    """)
-
-st.divider()
-
-# ── Step 3: Scope and run ─────────────────────────────────────────────────────
-st.markdown("### Step 3 — Set scope and run")
+# ── STEP 2 ────────────────────────────────────────────────────────────────────
+st.markdown(section_header("Step 2 — Upload your files",
+    "All files go into the single document zone on the Tool page. 80 classifies each one automatically."),
+    unsafe_allow_html=True)
 
 st.markdown("""
-**Fill in engagement details (sidebar)**
+<div style="background:#0d1628;border:1px solid rgba(255,255,255,0.07);
+  border-radius:14px;padding:28px 32px;margin-bottom:8px;">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <div style="font-size:13px;font-weight:700;color:#4d9fff;
+        font-family:'Inter',sans-serif;margin-bottom:10px;">What 80 detects automatically</div>
+      <div style="font-size:13px;color:#5a7394;font-family:'Inter',sans-serif;line-height:1.8;">
+        HR Master → keywords: HR, employee, staff, personnel<br>
+        System Access → keywords: UAL, access, AD, system<br>
+        SOA / Controls → keywords: SOA, ISO27001, annex<br>
+        RBAC Matrix → keywords: RBAC, role, matrix<br>
+        Registry → keywords: privileged, registry, admin<br>
+        Policy docs → any PDF with policy keywords
+      </div>
+    </div>
+    <div>
+      <div style="font-size:13px;font-weight:700;color:#4d9fff;
+        font-family:'Inter',sans-serif;margin-bottom:10px;">Accepted formats</div>
+      <div style="font-size:13px;color:#5a7394;font-family:'Inter',sans-serif;line-height:1.8;">
+        .xlsx — Excel workbooks<br>
+        .xls — Legacy Excel<br>
+        .csv — Comma-separated<br>
+        .pdf — PDF documents<br>
+        .png / .jpg — Screenshots for OCR<br>
+        .docx — Word documents
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-Before running, fill in the sidebar:
-- Client name and engagement reference — these print on every sheet of the output report
-- Your name as lead auditor
-- Audit standard (ISO 27001:2022, SOX ITGC, PCI-DSS etc.)
-- Tick the compliance frameworks you want cited on findings
+# ── STEP 3 ────────────────────────────────────────────────────────────────────
+st.markdown(section_header("Step 3 — Set scope and run",
+    "Two mandatory gates protect the integrity of every audit before the scan runs."),
+    unsafe_allow_html=True)
 
-**Select department scope (optional)**
-
-If you are auditing specific departments only (e.g. Finance and IT), select them from the 
-department filter. Leave empty to scan all departments.
-
-**Confirm population completeness**
-
-Before the scan runs, 80 shows you the row counts for both files and asks you to confirm 
-the data is complete and unfiltered. This confirmation is mandatory — it becomes part of 
-your workpaper evidence and protects you if the client later disputes a finding.
-
-**Set audit year and click GO**
-
-Use the year dropdown — it defaults to the previous year (which is where your data will be).
-Click **Full Year** to set January to December automatically.
-Click **▶ GO — Run Audit** to lock the scope and run the scan.
-""")
-
-st.warning("If you see 0 accounts scanned after clicking GO — your scope year does not match your data year. Change the year selector to match your data and click Full Year then GO again.")
-
-st.divider()
-
-# ── Step 4: Results ───────────────────────────────────────────────────────────
-st.markdown("### Step 4 — Review findings and download")
-
-tabs_info = [
-    ("🔎 Findings",    "The complete findings table. Filter by issue type and severity. Every row shows the account email, name, department, access level, days inactive and the detail of what was found. Sort by severity to see Critical findings first."),
-    ("🛠️ Remediation", "4-step action plan, named owner and SLA for every finding. Expand each row to see the full remediation instructions. Filter by severity to focus on Critical first. This is what you share with the IT Manager as their action list."),
-    ("⚖️ Frameworks",  "SOX, ISO 27001, GDPR and PCI-DSS reference per finding. The exact control clause is cited — not just the framework name. Use this tab when the client asks which control was breached."),
-    ("📈 Analysis",    "Breakdown by severity, issue type and department. Bar chart showing dormant account inactivity distribution. Use this for the management presentation."),
-    ("✍️ Opinion",     "Toggle between AI-generated opinion and rule-based. Click Generate for a professional 3-section audit memo. Always review and edit before using. The responsible auditor must approve this opinion."),
-    ("🎯 Audit Sample","Set your sample size (default 25). 80 selects Critical findings first, then High, then random Medium to fill the target. Each row has a specific test instruction. Download and hand to the external audit team."),
+gates = [
+    ("Population completeness gate",
+     "Before the scan runs, 80 asks you to confirm that the HR Master represents the complete employee population for the audit scope — not a filtered subset. This confirmation is preserved in the workpaper.",
+     "#ffb347"),
+    ("Scope lock gate",
+     "You set the audit period — start and end date. Once you click GO the scope is locked for that run. The scope is recorded in the workpaper header and all date-sensitive checks (dormant accounts, password expiry) use the scope end date, not today's date.",
+     "#ffb347"),
 ]
+for title, body, color in gates:
+    st.markdown(f"""
+<div style="background:#0d1628;border:1px solid rgba(255,179,71,0.18);
+  border-radius:14px;padding:24px 28px;margin-bottom:10px;
+  border-left:2px solid {color};">
+  <div style="font-size:14px;font-weight:700;color:#ffffff;
+    font-family:'Inter',sans-serif;margin-bottom:10px;">{title}</div>
+  <div style="font-size:13px;color:#5a7394;font-family:'Inter',sans-serif;
+    line-height:1.75;">{body}</div>
+</div>""", unsafe_allow_html=True)
 
-for tab_name, tab_desc in tabs_info:
-    with st.expander(tab_name):
-        st.markdown(tab_desc)
+# ── STEP 4 ────────────────────────────────────────────────────────────────────
+st.markdown(section_header("Step 4 — Review findings and download",
+    "Results appear immediately. One consolidated finding per account — all issues listed together."),
+    unsafe_allow_html=True)
 
-st.divider()
-
-# ── Download ──────────────────────────────────────────────────────────────────
-st.markdown("### The workpaper Excel report")
-st.markdown("Click **Download Workpaper-Ready Audit Report** at the bottom of the tool page. The file contains:")
-
-sheets = [
-    ("Engagement Cover",        "Client, reference, auditor, standard, scope dates, population counts and total findings. First page of your workpaper file."),
-    ("Audit Opinion",           "The full opinion text saved in the workpaper. Must be reviewed and signed by the responsible auditor."),
-    ("Executive Summary",       "Finding counts per check type. Copy into your management report as headline numbers."),
-    ("All Findings",            "Complete findings schedule with severity, detail, days inactive and post-termination days. Attach as appendix to the report."),
-    ("Remediation Playbook",    "4-step action plan, owner, SLA and framework references per finding. Give this to the client as their action list."),
-    ("Audit_Sample_Request",    "25-item prioritised sample with test instructions and evidence requirements. Hand to external audit team."),
-    ("Per issue-type sheets",   "One tab per finding type — Orphaned, SoD, Dormant etc. Use these in the walkthrough with the IT Manager."),
-    ("HR Master (Raw)",         "Exact HR file you uploaded. Workpaper evidence of the population audited."),
-    ("System Access (Raw)",     "Exact System Access file you uploaded. Workpaper evidence of the population audited."),
+outputs = [
+    ("On-screen findings",   "All findings displayed with severity, account detail, and policy references. Filter by severity, check type or search by email.", "#4d9fff"),
+    ("Workpaper Excel",      "9-sheet Excel: Engagement Cover, Audit Opinion, Executive Summary, All Findings, Remediation Playbook, Audit Sample, one sheet per issue type, and raw data files.", "#4d9fff"),
+    ("AI audit opinion",     "A professional audit memo with assurance level (Adverse / Qualified / Emphasis / Unqualified), executive summary, and key findings narrative. Review and sign.", "#00d4a0"),
+    ("Evidence sampler",     "25-item prioritised sample: Critical first, then High, then random Medium. Each row includes the specific test instruction and evidence required.", "#00d4a0"),
 ]
+col1, col2 = st.columns(2, gap="medium")
+for i, (title, body, color) in enumerate(outputs):
+    with (col1 if i % 2 == 0 else col2):
+        st.markdown(f"""
+<div style="background:#0d1628;border:1px solid rgba(255,255,255,0.07);
+  border-radius:14px;padding:24px 26px;margin-bottom:10px;
+  border-left:2px solid {color};">
+  <div style="font-size:14px;font-weight:700;color:#ffffff;
+    font-family:'Inter',sans-serif;margin-bottom:10px;">{title}</div>
+  <div style="font-size:13px;color:#5a7394;font-family:'Inter',sans-serif;
+    line-height:1.75;">{body}</div>
+</div>""", unsafe_allow_html=True)
 
-for sheet, desc in sheets:
-    st.markdown(f"**{sheet}** — {desc}")
+# ── COLUMN REFERENCE ──────────────────────────────────────────────────────────
+st.markdown(section_header("Required column names",
+    "Column names are matched case-insensitively. Alternatives are detected automatically."),
+    unsafe_allow_html=True)
 
-st.divider()
-
-# ── After the scan ────────────────────────────────────────────────────────────
-st.markdown("### After the scan — what to do with the findings")
-
-st.markdown("""
-**Critical findings go to the CISO or IT Manager immediately — not in the report, in person.**
-Post-termination logins, SoD violations, orphaned accounts with recent login activity. Do not wait 
-for the report to be written before escalating.
-
-**Verify near-match findings with HR before including them.**
-Near-match email findings need manual confirmation — some are legitimate aliases or name changes. 
-A wrong near-match finding damages your credibility more than missing one.
-
-**Check the exception register before finalising any finding.**
-Ask the client for their exception register. An admin account outside IT that was formally approved 
-by the CISO and documented in the register is not a finding — it is a managed exception. Note it as 
-an observation instead.
-
-**Every finding needs three things in the report:**
-1. The fact — what 80 found
-2. The policy — what the access control policy or JML procedure says should have happened
-3. The risk — what could go wrong because it did not happen
-
-80 gives you all three automatically. Your job is to verify the fact is accurate, confirm the right 
-policy is cited, and make the risk statement specific to this client.
-""")
-
-st.divider()
-
-# ── Column reference ──────────────────────────────────────────────────────────
-st.markdown("### Column name reference")
-st.markdown("Column names must match exactly — including capitalisation.")
-
-r1, r2 = st.columns(2)
-with r1:
-    st.markdown("**HR Master**")
+col1, col2 = st.columns(2, gap="medium")
+with col1:
     st.markdown("""
-| Column | Required |
-|---|---|
-| `Email` | ✅ Yes |
-| `FullName` | ✅ Yes |
-| `Department` | ✅ Yes |
-| `EmploymentStatus` | Recommended |
-| `ContractType` | Recommended |
-| `TerminationDate` | Recommended |
-| `JobTitle` | Optional |
-    """)
-with r2:
-    st.markdown("**System Access**")
+<div style="background:#0d1628;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:24px 28px;">
+  <div style="font-size:12px;font-weight:700;color:#4d9fff;letter-spacing:0.08em;
+    text-transform:uppercase;font-family:'Inter',sans-serif;margin-bottom:16px;">HR Master</div>
+""", unsafe_allow_html=True)
+    hr_cols = [
+        ("Email",             "Primary matching key", True),
+        ("FullName",          "Employee full name", True),
+        ("Department",        "Dept for SoD and RBAC checks", True),
+        ("EmploymentStatus",  "Active / Terminated / On Leave", True),
+        ("ContractType",      "Permanent / Contractor etc.", True),
+        ("TerminationDate",   "Used for post-term login check", False),
+        ("JoinDate",          "Used for contractor expiry check", False),
+        ("JobTitle",          "Used for RBAC Matrix check", False),
+    ]
+    for col, desc, req in hr_cols:
+        req_text = f'<span style="color:#ff4d5e;font-size:10px;font-weight:700;">required</span>' if req else f'<span style="color:#5a7394;font-size:10px;">optional</span>'
+        st.markdown(f"""
+<div style="display:flex;align-items:center;justify-content:space-between;
+  padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+  <div>
+    <span style="font-size:12px;font-weight:600;color:#c8d8ef;
+      font-family:'JetBrains Mono',monospace;">{col}</span>
+    <span style="font-size:11px;color:#5a7394;font-family:'Inter',sans-serif;
+      margin-left:8px;">{desc}</span>
+  </div>
+  {req_text}
+</div>""", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+with col2:
     st.markdown("""
-| Column | Required |
-|---|---|
-| `Email` | ✅ Yes |
-| `AccessLevel` | ✅ Yes |
-| `FullName` | Recommended |
-| `LastLoginDate` | Recommended |
-| `PasswordLastSet` | Recommended |
-| `AccountCreatedDate` | Recommended |
-| `MFA` | Recommended |
-| `SystemName` | Optional |
-    """)
-
-st.divider()
-
-if st.button("🛡️  Go to the Tool", type="primary", use_container_width=True):
-    st.switch_page("pages/tool.py")
+<div style="background:#0d1628;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:24px 28px;">
+  <div style="font-size:12px;font-weight:700;color:#00d4a0;letter-spacing:0.08em;
+    text-transform:uppercase;font-family:'Inter',sans-serif;margin-bottom:16px;">System Access (UAL)</div>
+""", unsafe_allow_html=True)
+    ual_cols = [
+        ("Email",            "Matched against HR Master", True),
+        ("AccessLevel",      "Role or access tier", True),
+        ("LastLoginDate",    "Used for dormant check", True),
+        ("PasswordLastSet",  "Used for password expiry check", True),
+        ("MFA",              "Enabled / Disabled / Not Enrolled", True),
+        ("SystemName",       "Source system name", False),
+        ("AccountStatus",    "Enabled / Disabled", False),
+        ("AccountCreatedDate","Used in scope filtering", False),
+    ]
+    for col, desc, req in ual_cols:
+        req_text = f'<span style="color:#ff4d5e;font-size:10px;font-weight:700;">required</span>' if req else f'<span style="color:#5a7394;font-size:10px;">optional</span>'
+        st.markdown(f"""
+<div style="display:flex;align-items:center;justify-content:space-between;
+  padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
+  <div>
+    <span style="font-size:12px;font-weight:600;color:#c8d8ef;
+      font-family:'JetBrains Mono',monospace;">{col}</span>
+    <span style="font-size:11px;color:#5a7394;font-family:'Inter',sans-serif;
+      margin-left:8px;">{desc}</span>
+  </div>
+  {req_text}
+</div>""", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
