@@ -72,31 +72,15 @@ st.markdown("""
   simultaneously across every account — full population, not a sample.
   Findings mapped to SOX, ISO 27001, GDPR and PCI-DSS. Workpaper ready.</div>
 
-  <!-- CTA row -->
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <a href="/Tool" target="_self" style="
-      display:inline-flex;align-items:center;gap:8px;
-      background:#4d9fff;color:#080f1e;
-      font-size:14px;font-weight:700;letter-spacing:0.01em;
-      padding:14px 30px;border-radius:10px;
-      text-decoration:none;font-family:'Inter',sans-serif;
-      box-shadow:0 4px 24px rgba(77,159,255,0.4);
-      transition:all 0.18s;
-    ">Run the audit &nbsp;→</a>
-    <a href="/How_to_Use" target="_self" style="
-      display:inline-flex;align-items:center;gap:8px;
-      background:rgba(255,255,255,0.04);color:#c8d8ef;
-      font-size:14px;font-weight:600;
-      padding:14px 28px;border-radius:10px;
-      text-decoration:none;font-family:'Inter',sans-serif;
-      border:1px solid rgba(255,255,255,0.09);
-      transition:all 0.18s;
-    ">See how it works</a>
-  </div>
-
-
 </div>
 """, unsafe_allow_html=True)
+
+# Hero CTA — st.page_link is the only reliable navigation on Streamlit Cloud
+_hc1, _hc2, _hc3 = st.columns([2, 2, 4])
+with _hc1:
+    st.page_link("pages/tool.py",       label="🛡️  Run the audit →",  use_container_width=True)
+with _hc2:
+    st.page_link("pages/how_to_use.py", label="📖  See how it works", use_container_width=True)
 
 # ── STATS ─────────────────────────────────────────────────────────────────────
 c1, c2, c3, c4 = st.columns(4)
@@ -276,22 +260,14 @@ st.markdown("""
   <div style="font-size:15px;color:#5a7394;font-family:'Inter',sans-serif;
     margin-bottom:32px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.7;">
     No API. No IT project. No contract.<br>Five files. Ten minutes. Workpaper ready.</div>
-  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-    <a href="/Tool" target="_self" style="
-      background:#4d9fff;color:#080f1e;
-      font-size:14px;font-weight:700;
-      padding:15px 34px;border-radius:10px;
-      text-decoration:none;font-family:'Inter',sans-serif;
-      box-shadow:0 4px 24px rgba(77,159,255,0.4);
-    ">Run the audit →</a>
-    <a href="/About" target="_self" style="
-      background:rgba(255,255,255,0.05);color:#c8d8ef;
-      font-size:14px;font-weight:600;
-      padding:15px 30px;border-radius:10px;
-      text-decoration:none;font-family:'Inter',sans-serif;
-      border:1px solid rgba(255,255,255,0.09);
-    ">About 80</a>
-  </div>
+    No API. No IT project. No contract.<br>Five files. Ten minutes. Workpaper ready.</div>
 </div>
 """, unsafe_allow_html=True)
+
+# Bottom CTA — st.page_link only
+_bc1, _bc2, _bc3, _bc4 = st.columns([1, 2, 2, 1])
+with _bc2:
+    st.page_link("pages/tool.py",  label="🛡️  Run the audit →", use_container_width=True)
+with _bc3:
+    st.page_link("pages/about.py", label="📋  About 80",         use_container_width=True)
 
