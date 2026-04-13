@@ -1,7 +1,7 @@
 """80 — IAM Audit Tool | Home — Premium dark v2"""
 
 import streamlit as st
-from components import render_header, render_sidebar_brand, stat_card, section_header, inject_css
+from components import render_header, render_sidebar_brand, stat_card, section_header, inject_css, led_dot
 
 # inject_css must be first — sets up HTML rendering context
 inject_css()
