@@ -30,8 +30,13 @@ GLOBAL_CSS = """
 
 /* ── KILL STREAMLIT CHROME ──────────────────────────────────────────────── */
 #MainMenu, footer, [data-testid="stDecoration"],
-[data-testid="stToolbar"], [data-testid="stStatusWidget"],
-[data-testid="stHeader"] { display: none !important; }
+[data-testid="stToolbar"], [data-testid="stStatusWidget"] { display: none !important; }
+
+/* stHeader kept visible — it contains the sidebar toggle button */
+[data-testid="stHeader"] {
+  background: var(--navy) !important;
+  border-bottom: 1px solid var(--border) !important;
+}
 [data-testid="stAppViewContainer"] > section.main { padding-top: 0 !important; }
 
 /* ── FULL APP DARK ──────────────────────────────────────────────────────── */
