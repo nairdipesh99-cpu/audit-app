@@ -26,8 +26,14 @@ GLOBAL_CSS = """
 
 /* ── KILL ALL STREAMLIT CHROME ──────────────────────────────────────────── */
 #MainMenu, footer, [data-testid="stDecoration"],
-[data-testid="stToolbar"], [data-testid="stStatusWidget"] {
+[data-testid="stToolbar"], [data-testid="stStatusWidget"],
+[data-testid="stHeader"] {
   display: none !important;
+}
+
+/* Remove Streamlit's default top spacing that clips our header */
+[data-testid="stAppViewContainer"] > section.main {
+  padding-top: 0 !important;
 }
 
 /* ── FULL APP DARK ──────────────────────────────────────────────────────── */
@@ -41,7 +47,7 @@ html, body,
 }
 
 .block-container {
-  padding-top: 1.5rem !important;
+  padding-top: 2.5rem !important;
   padding-left: 2.5rem !important;
   padding-right: 2.5rem !important;
   max-width: 1100px !important;
@@ -120,13 +126,39 @@ p, li, div { color: var(--off) !important; font-family: 'Inter', sans-serif !imp
 }
 
 /* ── PAGE LINK (nav) ────────────────────────────────────────────────────── */
-[data-testid="stPageLink"] a,
-[data-testid="stPageLink"] p {
-  color: var(--muted) !important;
+[data-testid="stPageLink"] {
+  display: flex !important;
+  justify-content: center !important;
+}
+[data-testid="stPageLink"] a {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: #7a8fa6 !important;
   font-size: 13px !important;
   font-weight: 600 !important;
   text-decoration: none !important;
   font-family: 'Inter', sans-serif !important;
+  padding: 7px 14px !important;
+  border-radius: 8px !important;
+  border: 1px solid transparent !important;
+  transition: all 0.18s !important;
+  white-space: nowrap !important;
+  background: transparent !important;
+}
+[data-testid="stPageLink"] a:hover {
+  color: #4d9fff !important;
+  background: rgba(77,159,255,0.1) !important;
+  border-color: rgba(77,159,255,0.2) !important;
+}
+[data-testid="stPageLink"] a[aria-current="page"],
+[data-testid="stPageLink"] a.active {
+  color: #4d9fff !important;
+  background: rgba(77,159,255,0.12) !important;
+  border-color: rgba(77,159,255,0.25) !important;
+}
+[data-testid="stPageLink"] p {
+  display: none !important;
 }
 
 /* ── INPUTS ─────────────────────────────────────────────────────────────── */
@@ -213,39 +245,43 @@ def render_header(active="Home"):
 
     with left:
         st.markdown("""
-<div style="display:flex;align-items:center;gap:12px;padding:8px 0;">
+<div style="display:flex;align-items:center;gap:12px;padding:12px 0 8px;">
   <div style="
-    width:40px;height:40px;
-    background:#1F3864;
-    border-radius:10px;
+    width:42px;height:42px;
+    background:linear-gradient(135deg,#1F3864,#2a4f8a);
+    border-radius:11px;
     display:flex;align-items:center;justify-content:center;
-    border:1px solid rgba(255,255,255,0.15);
+    border:1px solid rgba(255,255,255,0.18);
+    box-shadow:0 2px 12px rgba(0,0,0,0.4);
     flex-shrink:0;
   ">
-    <span style="font-size:18px;font-weight:900;color:#fff;
+    <span style="font-size:19px;font-weight:900;color:#fff;
       letter-spacing:-1px;font-family:'Inter',sans-serif;">80</span>
   </div>
   <div>
-    <div style="font-size:16px;font-weight:800;color:#ffffff;
+    <div style="font-size:17px;font-weight:800;color:#ffffff;
       letter-spacing:-0.03em;font-family:'Inter',sans-serif;line-height:1;">80</div>
     <div style="font-size:9px;font-weight:600;color:#4d9fff;
       letter-spacing:0.12em;text-transform:uppercase;
-      font-family:'Inter',sans-serif;margin-top:2px;">IAM Audit Tool</div>
+      font-family:'Inter',sans-serif;margin-top:3px;">IAM Audit Tool</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
     with mid:
-        # Native st.page_link — the ONLY reliable nav on Streamlit Cloud
-        n1, n2, n3, n4 = st.columns(4)
+        # Native st.page_link — only reliable nav on Streamlit Cloud
+        # Use equal columns with centre alignment
+        st.markdown('<div style="display:flex;justify-content:center;gap:4px;padding:6px 0;">', unsafe_allow_html=True)
+        n1, n2, n3, n4 = st.columns([1,1,1,1])
         with n1:
-            st.page_link("pages/home.py",       label="Home",       icon="🏠")
+            st.page_link("pages/home.py",        label="Home",        icon="🏠")
         with n2:
-            st.page_link("pages/tool.py",        label="Tool",       icon="🛡️")
+            st.page_link("pages/tool.py",         label="Tool",        icon="🛡️")
         with n3:
-            st.page_link("pages/about.py",       label="About",      icon="📋")
+            st.page_link("pages/about.py",        label="About",       icon="📋")
         with n4:
-            st.page_link("pages/how_to_use.py",  label="How to Use", icon="📖")
+            st.page_link("pages/how_to_use.py",   label="How to Use",  icon="📖")
+        st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
         st.markdown("""
