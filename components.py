@@ -56,10 +56,17 @@ html, body,
 }
 
 /* ── SIDEBAR ────────────────────────────────────────────────────────────── */
-[data-testid="stSidebar"],
+[data-testid="stSidebar"] {
+  background: #0d1628 !important;
+  border-right: 2px solid #4d9fff !important;
+  min-width: 250px !important;
+}
 [data-testid="stSidebar"] > div:first-child {
-  background: var(--navy-2) !important;
-  border-right: 1px solid var(--border) !important;
+  background: #0d1628 !important;
+}
+[data-testid="stSidebarContent"] {
+  background: #0d1628 !important;
+  padding: 1rem !important;
 }
 /* Streamlit nav in sidebar — style but don't hide */
 [data-testid="stSidebarNav"] a {
@@ -396,7 +403,9 @@ def render_header(active="Home"):
 
 def render_sidebar_brand():
     """Sidebar brand with LED dot and navigation links."""
-    inject_css()
+    # This empty caption forces Streamlit to register the sidebar as active
+    # Without a native widget first, Streamlit may hide the sidebar entirely
+    st.caption("")
     st.markdown(f"""
 <div style="padding:16px 0 16px;
   border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:16px;">
