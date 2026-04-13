@@ -150,14 +150,18 @@ with st.sidebar:
     st.divider()
 
     st.markdown("#### Engagement details")
+    _client  = st.text_input("Client",    placeholder="Nairs.com Ltd",  key="meta_client")
+    _ref     = st.text_input("Reference", placeholder="IAR-2025-001",  key="meta_ref")
+    _auditor = st.text_input("Auditor",   placeholder="Your full name", key="meta_auditor")
+    _std     = st.selectbox("Audit standard", [
+        "ISO 27001:2022","SOX ITGC","PCI-DSS v4.0","GDPR Art.32",
+        "ISACA IS Audit","Internal Audit Charter",
+    ], key="meta_standard")
     meta = {
-        "client":   st.text_input("Client",    placeholder="Nairs.com Ltd"),
-        "ref":      st.text_input("Reference", placeholder="IAR-2025-001"),
-        "auditor":  st.text_input("Auditor",   placeholder="Your full name"),
-        "standard": st.selectbox("Audit standard", [
-            "ISO 27001:2022","SOX ITGC","PCI-DSS v4.0","GDPR Art.32",
-            "ISACA IS Audit","Internal Audit Charter",
-        ]),
+        "client":   _client   or "Not specified",
+        "ref":      _ref      or "Not specified",
+        "auditor":  _auditor  or "Not specified",
+        "standard": _std,
     }
 
     st.divider()
