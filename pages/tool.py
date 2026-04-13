@@ -25,6 +25,18 @@ if "ss_end"    not in st.session_state: st.session_state["ss_end"]    = date(_de
 if "locked"    not in st.session_state: st.session_state["locked"]    = False
 if "confirmed" not in st.session_state: st.session_state["confirmed"] = False
 
+# ── Always define SCOPE_START/END at module level from session state ──────────
+# This prevents NameError when referenced in main body before sidebar runs
+SCOPE_START          = st.session_state["ss_start"]
+SCOPE_END            = st.session_state["ss_end"]
+# Default values for sidebar-controlled variables
+# These get overridden when the sidebar renders, but must exist at module level
+DORMANT_DAYS         = 90
+PASSWORD_EXPIRY_DAYS = 90
+FUZZY_THRESHOLD      = 88
+MAX_SYSTEMS          = 3
+selected_fw          = ["SOX", "ISO", "GDPR"]
+
 def _this_month():  st.session_state.update(ss_start=today.replace(day=1), ss_end=today, locked=False)
 def _last_q():
     q=(today.month-1)//3; me=[31,28,31,30,31,30,31,31,30,31,30,31]
