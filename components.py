@@ -56,13 +56,18 @@ html, body,
   background: var(--navy-2) !important;
   border-right: 1px solid var(--border) !important;
 }
-[data-testid="stSidebarNav"] a {
-  color: var(--muted) !important; font-size: 13px !important;
-  font-weight: 500 !important; border-radius: 8px !important; padding: 9px 14px !important;
+/* Hide Streamlit's auto nav links — we use our own header nav */
+[data-testid="stSidebarNav"] {
+  display: none !important;
 }
-[data-testid="stSidebarNav"] a:hover,
-[data-testid="stSidebarNav"] a[aria-current="page"] {
-  background: var(--ice-dim) !important; color: var(--ice) !important;
+/* Keep the sidebar collapse/expand toggle button visible */
+[data-testid="collapsedControl"] {
+  display: flex !important;
+  background: var(--navy-2) !important;
+  border-right: 1px solid var(--border) !important;
+}
+[data-testid="collapsedControl"] svg {
+  fill: var(--muted) !important;
 }
 
 /* ── TYPOGRAPHY ─────────────────────────────────────────────────────────── */
