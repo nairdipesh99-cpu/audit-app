@@ -13,7 +13,7 @@ from engine import (
     run_rbac_checks, run_registry_checks,
     sev_order, SOD_RULES,
 )
-from irs import compute_irs  # <-- IRS Engine Added
+from irs import compute_irs
 from components import inject_css, render_header, render_sidebar_brand, led_status_bar, led_dot
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,40 +48,6 @@ def _set_year():
     y = st.session_state["audit_year_sel"]
     st.session_state.update(ss_start=date(y,1,1),ss_end=date(y,12,31),locked=False)
 
-# ── Document Parsers (from your file) ────────────────────────────────────────
-def extract_text(uploaded_file, max_chars=5000):
-    if uploaded_file is None: return ""
-    name = uploaded_file.name.lower()
-    try:
-        if name.endswith(".txt"): return uploaded_file.read().decode("utf-8", errors="ignore")[:max_chars]
-        elif name.endswith(".pdf"):
-            import pypdf
-            reader = pypdf.PdfReader(uploaded_file)
-            return " ".join(p.extract_text() or "" for p in reader.pages[:10])[:max_chars]
-        elif name.endswith(".docx"):
-            import docx
-            doc = docx.Document(uploaded_file)
-            return " ".join(p.text for p in doc.paragraphs)[:max_chars]
-        elif name.endswith((".xlsx",".xls")):
-            df = pd.read_excel(uploaded_file, sheet_name=None)
-            return " ".join(sheet_df.to_string(index=False) for sheet_df in df.values())[:max_chars]
-        elif name.endswith(".csv"):
-            return pd.read_csv(uploaded_file).to_string(index=False)[:max_chars]
-    except Exception as e: return f"[Could not parse {uploaded_file.name}: {e}]"
-    return ""
-
-def detect_doc_type(f):
-    if f is None: return "other"
-    name = f.name.lower()
-    if any(k in name for k in ["hr_master","employee","staff_list"]): return "hr_master"
-    if any(k in name for k in ["system_access","user_access","ual"]): return "system_access"
-    if any(k in name for k in ["soa","annex_a"]): return "soa"
-    if any(k in name for k in ["access_policy","access_control"]): return "access_policy"
-    if any(k in name for k in ["jml","joiner","mover","leaver"]): return "jml_procedure"
-    if any(k in name for k in ["rbac","role_matrix"]): return "rbac_matrix"
-    if any(k in name for k in ["privileged","priv_register"]): return "privileged_registry"
-    return "other"
-
 # ─────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
@@ -115,11 +81,11 @@ with st.sidebar:
     MAX_SYSTEMS          = st.slider("Max systems per user", 2, 10, 3)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HEADER + DOCUMENT UPLOAD
+#  HEADER + UPLOAD
 # ─────────────────────────────────────────────────────────────────────────────
 render_header()
 st.markdown("### 📂 Upload audit documents")
-uploaded_files = st.file_uploader("Drop documents here", type=["xlsx","xls","csv","pdf","txt","docx"], accept_multiple_files=True, label_visibility="collapsed", key="multi_upload")
+uploaded_files = st.file_uploader("Drop documents here", type=["xlsx","xls","csv","pdf","txt","docx"], accept_multiple_files=True, label_visibility="collapsed")
 
 hr_file, sys_file, doc_files = None, None, []
 if uploaded_files:
@@ -145,5 +111,4 @@ if hr_file and sys_file:
     if st.session_state.get("locked", False):
         # 1. RUN ENGINE
         findings_df, excluded_count, _ = run_audit(
-            hr_df, sys_df, st.session_state["ss_start"], st.session_state["ss_end"],
-            DORMANT_DAYS, PASSWORD_EXPIRY_DAYS, FUZZY_
+            hr_
