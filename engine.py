@@ -1738,7 +1738,7 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
         O  = wb.add_format({"bg_color":"#FFF0CC","font_name":"Arial","font_size":9})
         Y  = wb.add_format({"bg_color":"#FFFBCC","font_name":"Arial","font_size":9})
         TL = wb.add_format({"bold":True,"font_name":"Arial","font_size":10,"font_color":"#1F3864"})
-        TV = wb.add_format({"font_name":"Arial","font_size":10})
+        TV = wb.add_format({"font_name":"Arial","font_size":10,"font_color":"#1F1F1F"})
         TT = wb.add_format({"bold":True,"font_name":"Arial","font_size":18,"font_color":"white","bg_color":"#1F3864","valign":"vcenter","align":"left","indent":1})
         OP = wb.add_format({"font_name":"Arial","font_size":10,"text_wrap":True,"valign":"top"})
 
@@ -1772,10 +1772,10 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
         wc.set_row(2, 10)
         in_scope_n = len(sys_df) - excluded_count
         cover_rows = [
-            ("Client Organisation",   meta.get("client",   "—")),
-            ("Engagement Reference",  meta.get("ref",      "—")),
-            ("Audit Standard",        meta.get("standard", "—")),
-            ("Lead Auditor",          meta.get("auditor",  "—")),
+            ("Client Organisation",   meta.get("client",   "") or "Not specified"),
+            ("Engagement Reference",  meta.get("ref",      "") or "Not specified"),
+            ("Audit Standard",        meta.get("standard", "") or "ISO 27001:2022"),
+            ("Lead Auditor",          meta.get("auditor",  "") or "Not specified"),
             ("Review Period",         f"{scope_start.strftime('%d %b %Y')} → {scope_end.strftime('%d %b %Y')}"),
             ("Date of Report",        datetime.today().strftime("%d %B %Y")),
             ("Total Population",      f"{len(sys_df):,} system accounts"),
@@ -1805,10 +1805,10 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
         def cs(s): return len(findings_df[findings_df["Severity"]==s])  if not findings_df.empty else 0
         summary = pd.DataFrame([
             ("── ENGAGEMENT ──",                    ""),
-            ("Client",                              meta.get("client","—")),
-            ("Reference",                           meta.get("ref","—")),
-            ("Auditor",                             meta.get("auditor","—")),
-            ("Standard",                            meta.get("standard","—")),
+            ("Client",                              meta.get("client","") or "Not specified"),
+            ("Reference",                           meta.get("ref","")    or "Not specified"),
+            ("Auditor",                             meta.get("auditor","") or "Not specified"),
+            ("Standard",                            meta.get("standard","") or "ISO 27001:2022"),
             ("Scope from",                          scope_start.strftime("%d %b %Y")),
             ("Scope to",                            scope_end.strftime("%d %b %Y")),
             ("── POPULATION ──",                    ""),
