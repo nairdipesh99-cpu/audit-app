@@ -1480,7 +1480,7 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
         _join_dt  = parse_date(_join_raw)
         _days_join = safe_days(_join_dt, scope_end_dt) if _join_dt else 9999
         _is_contr = _fast.get("is_contractor", is_contractor(_raw_contract))
-        if (_is_contr and _term_date is None
+        if (_is_contr and term_date is None
                 and (_days_join is None or _days_join > 30)):
             account_issues.append((
                 "Contractor Without Expiry Date",
