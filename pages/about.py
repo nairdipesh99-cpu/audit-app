@@ -3,7 +3,6 @@
 import streamlit as st
 from components import inject_css, render_header, render_sidebar_brand, section_header
 
-inject_css()
 render_header(active="About")
 
 with st.sidebar:
