@@ -3,10 +3,11 @@
 import streamlit as st
 from components import inject_css, render_header, render_sidebar_brand, section_header
 
-render_header(active="About")
-
 with st.sidebar:
     render_sidebar_brand()
+
+render_header(active="About")
+
 
 # ── PAGE HERO ─────────────────────────────────────────────────────────────────
 st.markdown("""
