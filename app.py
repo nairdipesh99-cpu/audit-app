@@ -9,7 +9,7 @@ st.set_page_config(
     page_title="80 — IAM Audit Tool",
     layout="wide",
     page_icon="🛡️",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 home   = st.Page("pages/home.py",       title="Home",       icon="🏠", default=True)
