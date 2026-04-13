@@ -25,12 +25,9 @@ if "ss_end"    not in st.session_state: st.session_state["ss_end"]    = date(_de
 if "locked"    not in st.session_state: st.session_state["locked"]    = False
 if "confirmed" not in st.session_state: st.session_state["confirmed"] = False
 
-# ── Always define SCOPE_START/END at module level from session state ──────────
-# This prevents NameError when referenced in main body before sidebar runs
+# Module-level defaults — prevent NameError if referenced before sidebar renders
 SCOPE_START          = st.session_state["ss_start"]
 SCOPE_END            = st.session_state["ss_end"]
-# Default values for sidebar-controlled variables
-# These get overridden when the sidebar renders, but must exist at module level
 DORMANT_DAYS         = 90
 PASSWORD_EXPIRY_DAYS = 90
 FUZZY_THRESHOLD      = 88
@@ -146,8 +143,16 @@ def parse_soa_sod_rules(soa_text):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  HEADER — must render first so CSS loads before sidebar draws
+# ─────────────────────────────────────────────────────────────────────────────
+render_header()
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    render_sidebar_brand()
+    st.divider()
 
     st.markdown("#### Engagement details")
     meta = {
@@ -240,12 +245,8 @@ def parse_soa_sod_rules(soa_text):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HEADER + DOCUMENT UPLOAD ZONE
+#  DOCUMENT UPLOAD ZONE
 # ─────────────────────────────────────────────────────────────────────────────
-render_header()
-with st.sidebar:
-    render_sidebar_brand()
-    st.divider()
 
 st.markdown("### 📂 Upload audit documents")
 st.caption(
@@ -512,7 +513,7 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
     if (st.session_state.get("_last_cache_key") != _cache_key or
             "findings_cache" not in st.session_state):
         with st.spinner("🔍 Running 18 checks across all identities — this may take a moment for large files..."):
-            findings_df, excluded_count, col_warnings = run_audit(
+            findings_df, excluded_count = run_audit(
                 hr_df_f, sys_df_f,
                 SCOPE_START, SCOPE_END,
                 DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
@@ -528,15 +529,9 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
     else:
         findings_df    = st.session_state["findings_cache"]
         excluded_count = st.session_state["excluded_cache"]
-        col_warnings   = st.session_state.get("col_warnings", [])
 
     in_scope_n = len(sys_df_f) - excluded_count
     total = len(findings_df)
-
-    # Show missing column warnings prominently
-    if col_warnings:
-        for w in col_warnings:
-            st.warning(w)
 
     # Scope & doc banner
     doc_names = ", ".join(f.name for f,_ in doc_files) if doc_files else "None uploaded"
