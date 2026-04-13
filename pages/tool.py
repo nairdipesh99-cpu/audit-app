@@ -143,12 +143,7 @@ def parse_soa_sod_rules(soa_text):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HEADER — must render first so CSS loads before sidebar draws
-# ─────────────────────────────────────────────────────────────────────────────
-render_header()
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  SIDEBAR
+#  SIDEBAR — must come before main content in Streamlit
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_brand()
@@ -245,8 +240,9 @@ with st.sidebar:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  DOCUMENT UPLOAD ZONE
+#  HEADER + DOCUMENT UPLOAD ZONE
 # ─────────────────────────────────────────────────────────────────────────────
+render_header()
 
 st.markdown("### 📂 Upload audit documents")
 st.caption(
