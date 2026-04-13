@@ -13,7 +13,7 @@ from engine import (
     run_rbac_checks, run_registry_checks,
     sev_order, SOD_RULES,
 )
-from components import inject_css, render_header, render_sidebar_brand
+from components import inject_css, render_header, render_sidebar_brand, led_status_bar, led_dot
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SESSION STATE
