@@ -1,7 +1,7 @@
 """80 — IAM Audit Tool | How to Use"""
 
 import streamlit as st
-from components import inject_css, render_header, render_sidebar_brand, section_header
+from components import inject_css, render_header, render_sidebar_brand, stat_card, section_header
 
 with st.sidebar:
     render_sidebar_brand()
