@@ -56,18 +56,23 @@ html, body,
   background: var(--navy-2) !important;
   border-right: 1px solid var(--border) !important;
 }
-/* Hide Streamlit's auto nav links — we use our own header nav */
-[data-testid="stSidebarNav"] {
-  display: none !important;
+/* Streamlit nav in sidebar — style but don't hide */
+[data-testid="stSidebarNav"] a {
+  color: var(--muted) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  text-decoration: none !important;
 }
-/* Keep the sidebar collapse/expand toggle button visible */
+[data-testid="stSidebarNav"] a:hover {
+  background: var(--ice-dim) !important;
+  color: var(--ice) !important;
+}
+/* Sidebar toggle button */
 [data-testid="collapsedControl"] {
   display: flex !important;
   background: var(--navy-2) !important;
-  border-right: 1px solid var(--border) !important;
-}
-[data-testid="collapsedControl"] svg {
-  fill: var(--muted) !important;
 }
 
 /* ── TYPOGRAPHY ─────────────────────────────────────────────────────────── */
@@ -133,7 +138,7 @@ p, li, div { color: var(--off) !important; font-family: 'Inter', sans-serif !imp
   border-color: rgba(77,159,255,0.2) !important;
   box-shadow: 0 0 14px rgba(77,159,255,0.2) !important;
 }
-[data-testid="stPageLink"] p { display: none !important; }
+/* stPageLink p — labels visible */
 
 /* ── INPUTS ─────────────────────────────────────────────────────────────── */
 .stSelectbox > div > div,
@@ -385,10 +390,10 @@ def render_header(active="Home"):
 
 
 def render_sidebar_brand():
-    """Sidebar brand with LED dot."""
+    """Sidebar brand with LED dot and navigation links."""
     inject_css()
     st.markdown(f"""
-<div style="padding:16px 0 20px;
+<div style="padding:16px 0 16px;
   border-bottom:1px solid rgba(255,255,255,0.06);margin-bottom:16px;">
   <div style="display:flex;align-items:center;gap:11px;">
     <div style="position:relative;flex-shrink:0;">
@@ -417,6 +422,12 @@ def render_sidebar_brand():
   </div>
 </div>
 """, unsafe_allow_html=True)
+    # Navigation links in sidebar
+    st.page_link("pages/home.py",       label="Home",       icon="🏠")
+    st.page_link("pages/tool.py",       label="Tool",       icon="🛡️")
+    st.page_link("pages/about.py",      label="About",      icon="📋")
+    st.page_link("pages/how_to_use.py", label="How to Use", icon="📖")
+    st.markdown("---")
 
 
 def stat_card(number, label, sublabel="", color="#4d9fff"):
