@@ -7,10 +7,11 @@ from components import render_header, render_sidebar_brand, stat_card, section_h
 inject_css()
 
 # Header before sidebar
-render_header(active="Home")
-
 with st.sidebar:
     render_sidebar_brand()
+
+render_header(active="Home")
+
 
 # ── HERO ─────────────────────────────────────────────────────────────────────
 st.markdown("""
