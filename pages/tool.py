@@ -13,7 +13,7 @@ from engine import (
     run_rbac_checks, run_registry_checks,
     sev_order, SOD_RULES,
 )
-from components import render_header, render_sidebar_brand
+from components import inject_css, render_header, render_sidebar_brand
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SESSION STATE
@@ -136,9 +136,6 @@ def parse_soa_sod_rules(soa_text):
 # ─────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
-with st.sidebar:
-    render_sidebar_brand()
-    st.divider()
 
     st.markdown("#### Engagement details")
     meta = {
@@ -234,6 +231,9 @@ with st.sidebar:
 #  HEADER + DOCUMENT UPLOAD ZONE
 # ─────────────────────────────────────────────────────────────────────────────
 render_header()
+with st.sidebar:
+    render_sidebar_brand()
+    st.divider()
 
 st.markdown("### 📂 Upload audit documents")
 st.caption(
