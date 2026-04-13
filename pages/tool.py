@@ -13,7 +13,7 @@ from engine import (
     run_rbac_checks, run_registry_checks,
     sev_order, SOD_RULES,
 )
-from irs import compute_irs
+from irs import compute_irs  # <-- IRS Engine Added
 from components import inject_css, render_header, render_sidebar_brand, led_status_bar, led_dot
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,15 +48,12 @@ def _set_year():
     y = st.session_state["audit_year_sel"]
     st.session_state.update(ss_start=date(y,1,1),ss_end=date(y,12,31),locked=False)
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  DOCUMENT PARSER
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Document Parsers (from your file) ────────────────────────────────────────
 def extract_text(uploaded_file, max_chars=5000):
     if uploaded_file is None: return ""
     name = uploaded_file.name.lower()
     try:
-        if name.endswith(".txt"):
-            return uploaded_file.read().decode("utf-8", errors="ignore")[:max_chars]
+        if name.endswith(".txt"): return uploaded_file.read().decode("utf-8", errors="ignore")[:max_chars]
         elif name.endswith(".pdf"):
             import pypdf
             reader = pypdf.PdfReader(uploaded_file)
@@ -67,38 +64,23 @@ def extract_text(uploaded_file, max_chars=5000):
             return " ".join(p.text for p in doc.paragraphs)[:max_chars]
         elif name.endswith((".xlsx",".xls")):
             df = pd.read_excel(uploaded_file, sheet_name=None)
-            text_parts = []
-            for sheet_name, sheet_df in df.items():
-                text_parts.append(f"[Sheet: {sheet_name}]")
-                text_parts.append(sheet_df.to_string(index=False))
-            return " ".join(text_parts)[:max_chars]
+            return " ".join(sheet_df.to_string(index=False) for sheet_df in df.values())[:max_chars]
         elif name.endswith(".csv"):
             return pd.read_csv(uploaded_file).to_string(index=False)[:max_chars]
-    except Exception as e:
-        return f"[Could not parse {uploaded_file.name}: {e}]"
+    except Exception as e: return f"[Could not parse {uploaded_file.name}: {e}]"
     return ""
 
 def detect_doc_type(f):
     if f is None: return "other"
     name = f.name.lower()
-    if any(k in name for k in ["hr_master","hr master","hrmaster","employee","staff_list","personnel"]): return "hr_master"
+    if any(k in name for k in ["hr_master","employee","staff_list"]): return "hr_master"
     if any(k in name for k in ["system_access","user_access","ual"]): return "system_access"
-    if any(k in name for k in ["soa","annex_a","policy"]): return "soa"
+    if any(k in name for k in ["soa","annex_a"]): return "soa"
+    if any(k in name for k in ["access_policy","access_control"]): return "access_policy"
+    if any(k in name for k in ["jml","joiner","mover","leaver"]): return "jml_procedure"
     if any(k in name for k in ["rbac","role_matrix"]): return "rbac_matrix"
     if any(k in name for k in ["privileged","priv_register"]): return "privileged_registry"
     return "other"
-
-def parse_soa_sod_rules(soa_text):
-    import re
-    rules = {}
-    dept_keywords = ["Finance","IT","HR","Sales","Operations"]
-    access_keywords = ["Admin","Finance","Payroll","DBAdmin"]
-    for dept in dept_keywords:
-        pattern = rf"{dept}[^.\n]{{0,60}}({"|".join(access_keywords)})"
-        matches = re.findall(pattern, soa_text, re.IGNORECASE)
-        if matches:
-            rules[dept] = list(set(matches))
-    return rules
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SIDEBAR
@@ -107,11 +89,11 @@ with st.sidebar:
     render_sidebar_brand()
     st.divider()
     st.markdown("#### Engagement details")
-    _client  = st.text_input("Client",    placeholder="Nairs.com Ltd",  key="meta_client")
-    _ref     = st.text_input("Reference", placeholder="IAR-2025-001",  key="meta_ref")
-    _auditor = st.text_input("Auditor",   placeholder="Your full name", key="meta_auditor")
+    _client  = st.text_input("Client", placeholder="Nairs.com Ltd", key="meta_client")
+    _ref     = st.text_input("Reference", placeholder="IAR-2025-001", key="meta_ref")
+    _auditor = st.text_input("Auditor", placeholder="Your full name", key="meta_auditor")
     _std     = st.selectbox("Audit standard", ["ISO 27001:2022","SOX ITGC","PCI-DSS v4.0","GDPR Art.32"], key="meta_standard")
-    
+
     st.divider()
     st.markdown("#### Audit scope")
     _yr_opts = list(range(today.year, today.year - 16, -1))
@@ -121,4 +103,47 @@ with st.sidebar:
     sb2.button("Last Quarter", use_container_width=True, on_click=_last_q)
     dc1, dc2 = st.columns(2)
     dc1.date_input("From", key="ss_start", on_change=_date_chg)
-    dc2.date_
+    dc2.date_input("To", key="ss_end", on_change=_date_chg)
+    
+    date_err = st.session_state["ss_start"] >= st.session_state["ss_end"]
+    st.button("▶  GO — Run Audit", use_container_width=True, type="primary", disabled=date_err, on_click=_go)
+
+    st.divider()
+    DORMANT_DAYS         = st.slider("Dormant (days)", 30, 365, 90)
+    PASSWORD_EXPIRY_DAYS = st.slider("Password expiry (days)", 30, 365, 90)
+    FUZZY_THRESHOLD      = st.slider("Fuzzy match %", 70, 99, 88)
+    MAX_SYSTEMS          = st.slider("Max systems per user", 2, 10, 3)
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  HEADER + DOCUMENT UPLOAD
+# ─────────────────────────────────────────────────────────────────────────────
+render_header()
+st.markdown("### 📂 Upload audit documents")
+uploaded_files = st.file_uploader("Drop documents here", type=["xlsx","xls","csv","pdf","txt","docx"], accept_multiple_files=True, label_visibility="collapsed", key="multi_upload")
+
+hr_file, sys_file, doc_files = None, None, []
+if uploaded_files:
+    for f in uploaded_files:
+        dtype = detect_doc_type(f)
+        if dtype == "hr_master": hr_file = f
+        elif dtype == "system_access": sys_file = f
+        else: doc_files.append((f, dtype))
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  MAIN AUDIT FLOW
+# ─────────────────────────────────────────────────────────────────────────────
+if hr_file and sys_file:
+    hr_df = pd.read_excel(hr_file) if not hr_file.name.endswith('.csv') else pd.read_csv(hr_file)
+    sys_df = pd.read_excel(sys_file) if not sys_file.name.endswith('.csv') else pd.read_csv(sys_file)
+
+    if not st.session_state.get("confirmed", False):
+        if st.button("✅ I confirm — complete population", type="primary", use_container_width=True):
+            st.session_state["confirmed"] = True
+            st.rerun()
+        st.stop()
+
+    if st.session_state.get("locked", False):
+        # 1. RUN ENGINE
+        findings_df, excluded_count, _ = run_audit(
+            hr_df, sys_df, st.session_state["ss_start"], st.session_state["ss_end"],
+            DORMANT_DAYS, PASSWORD_EXPIRY_DAYS, FUZZY_
