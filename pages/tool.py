@@ -509,7 +509,7 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
     if (st.session_state.get("_last_cache_key") != _cache_key or
             "findings_cache" not in st.session_state):
         with st.spinner("🔍 Running 18 checks across all identities — this may take a moment for large files..."):
-            findings_df, excluded_count = run_audit(
+            findings_df, excluded_count, _col_warnings = run_audit(
                 hr_df_f, sys_df_f,
                 SCOPE_START, SCOPE_END,
                 DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
