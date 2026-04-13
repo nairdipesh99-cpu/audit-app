@@ -12,10 +12,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-home     = st.Page("pages/home.py",        title="Home",         icon="🏠", default=True)
-about    = st.Page("pages/about.py",       title="About 80",     icon="📋")
-tool     = st.Page("pages/tool.py",        title="Use the Tool", icon="🛡️")
-how_to   = st.Page("pages/how_to_use.py",  title="How to Use",   icon="📖")
+home     = st.Page("pages/home.py",        title="Home",        icon="🏠", default=True)
+about    = st.Page("pages/about.py",       title="About",       icon="📋")
+tool     = st.Page("pages/tool.py",        title="Tool",        icon="🛡️")
+how_to   = st.Page("pages/how_to_use.py",  title="How to Use",  icon="📖")
 
 pg = st.navigation([home, about, tool, how_to])
 pg.run()
