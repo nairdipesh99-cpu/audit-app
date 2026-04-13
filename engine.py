@@ -1739,7 +1739,7 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
         Y  = wb.add_format({"bg_color":"#FFFBCC","font_name":"Arial","font_size":9})
         TL = wb.add_format({"bold":True,"font_name":"Arial","font_size":10,"font_color":"#1F3864"})
         TV = wb.add_format({"font_name":"Arial","font_size":10})
-        TT = wb.add_format({"bold":True,"font_name":"Arial","font_size":14,"font_color":"#1F3864"})
+        TT = wb.add_format({"bold":True,"font_name":"Arial","font_size":18,"font_color":"white","bg_color":"#1F3864","valign":"vcenter","align":"left","indent":1})
         OP = wb.add_format({"font_name":"Arial","font_size":10,"text_wrap":True,"valign":"top"})
 
         def write_sheet(df, name):
@@ -1766,8 +1766,10 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
         wc = wb.add_worksheet("Engagement Cover")
         wc.hide_gridlines(2)
         wc.set_column("A:A", 4); wc.set_column("B:B", 34); wc.set_column("C:C", 52)
-        wc.set_row(1, 8); wc.write("B2", "Identity & Access Control Audit Report", TT)
-        wc.set_row(2, 6)
+        wc.set_row(0, 8)
+        wc.set_row(1, 56)
+        wc.merge_range("B2:C2", "Identity & Access Control Audit Report", TT)
+        wc.set_row(2, 10)
         in_scope_n = len(sys_df) - excluded_count
         cover_rows = [
             ("Client Organisation",   meta.get("client",   "—")),
@@ -1790,9 +1792,10 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end,
         # Sheet 2 — Audit Opinion
         wo = wb.add_worksheet("Audit Opinion")
         wo.hide_gridlines(2); wo.set_column("A:A", 4); wo.set_column("B:B", 100)
-        wo.set_row(1, 8)
-        wo.write("B2", "Audit Opinion — Identity & Access Control Review", TT)
-        wo.set_row(2, 6)
+        wo.set_row(0, 8)
+        wo.set_row(1, 56)
+        wo.merge_range("B2:C2", "Audit Opinion — Identity & Access Control Review", TT)
+        wo.set_row(2, 10)
         for i, line in enumerate(opinion_text.split("\n"), start=3):
             wo.set_row(i, 15); wo.write(i, 1, line, OP)
 
