@@ -1213,12 +1213,15 @@ def run_audit(hr_df, sys_df, scope_start, scope_end,
     # Result: 5x-10x speedup on large populations
 
     # Vectorise UAL dates
-    sys["_login_dt"]  = pd.to_datetime(sys["LastLoginDate"],  errors="coerce").dt.date
-    sys["_pwd_dt"]    = pd.to_datetime(sys["PasswordLastSet"], errors="coerce").dt.date
-    sys["_days_idle"] = sys["_login_dt"].apply(
-        lambda d: (scope_end_dt - d).days if pd.notna(d) and d is not None else None)
-    sys["_days_pwd"]  = sys["_pwd_dt"].apply(
-        lambda d: (scope_end_dt - d).days if pd.notna(d) and d is not None else None)
+    # Use vectorised pandas subtraction — avoids type errors in pandas 3.x
+    _scope_end_ts     = pd.Timestamp(scope_end_dt)
+    _login_ts         = pd.to_datetime(sys["LastLoginDate"],  errors="coerce")
+    _pwd_ts           = pd.to_datetime(sys["PasswordLastSet"], errors="coerce")
+    sys["_login_dt"]  = _login_ts.dt.date
+    sys["_pwd_dt"]    = _pwd_ts.dt.date
+    # Compute days using timedelta — safe across pandas versions
+    sys["_days_idle"] = (_scope_end_ts - _login_ts).dt.days.where(_login_ts.notna(), other=None)
+    sys["_days_pwd"]  = (_scope_end_ts - _pwd_ts).dt.days.where(_pwd_ts.notna(),   other=None)
     sys["_mfa_lower"] = sys["MFA"].astype(str).str.strip().str.lower()         if "MFA" in sys.columns else ""
     sys["_prefix"]    = sys["_em"].str.split("@").str[0]
 
