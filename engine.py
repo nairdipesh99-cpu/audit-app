@@ -4,19 +4,18 @@ import pandas as pd
 from thefuzz import fuzz
 import io, json, base64, re, random
 from datetime import datetime, date, timedelta
-import irs  # Handles the Identity Risk Scoring logic
+import irs  # This requires irs.py to be in the same folder as this file
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  POLICY CONSTANTS  (sidebar overrides these at runtime)
+#  POLICY CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
 DORMANT_DAYS         = 90
 PASSWORD_EXPIRY_DAYS = 90
 FUZZY_THRESHOLD      = 88
 MAX_SYSTEMS          = 3
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-#  SEMANTIC INTELLIGENCE — department and access level normalisation
+#  SEMANTIC INTELLIGENCE — Department Synonyms
 # ─────────────────────────────────────────────────────────────────────────────
 
 DEPT_SYNONYMS = {
@@ -416,8 +415,9 @@ DEPT_SYNONYMS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  ACCESS LEVEL SYNONYMS — maps every known variation to canonical form
+#  ACCESS LEVEL SYNONYMS
 # ─────────────────────────────────────────────────────────────────────────────
+
 ACCESS_SYNONYMS = {
     "Admin": [
         "admin","administrator","administration access","system admin",
@@ -485,53 +485,40 @@ ACCESS_SYNONYMS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  EXCEL GENERATION LOGIC
+#  EXCEL GENERATION
 # ─────────────────────────────────────────────────────────────────────────────
 
 def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end, excluded_count, meta, opinion_text):
-    """
-    Generates the Excel download. Updated to include Sheet 10.
-    """
+    """Generates the Excel download with all findings and the Risk Register."""
     output = io.BytesIO()
     
-    # 1. COMPUTE SCORES: Use irs.py to calculate risk scores before export
-    # This attaches identity_risk_score and risk_band to the findings_df
+    # Calculate scores before building sheets
     findings_df = irs.compute_irs(findings_df, scope_end)
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Note: You will need to add your logic for Sheets 1-9 back here.
-        # This snippet ensures Sheet 10 is correctly generated.
+        # Note: In your actual tool, you will have Sheet 1 through 9 logic here.
         
         # ─────────────────────────────────────────────────────────────────
-        # NEW: SHEET 10 - IDENTITY RISK REGISTER
+        # SHEET 10: IDENTITY RISK REGISTER
         # ─────────────────────────────────────────────────────────────────
-        # 2. BUILD REGISTER: Get the ranked dataframe for Sheet 10
         risk_register = irs.build_risk_register(findings_df)
         
         if not risk_register.empty:
-            # Write to Excel
             risk_register.to_excel(writer, sheet_name="10. Identity Risk Register", index=False)
             
-            # 3. FORMATTING: Apply risk band highlighting
             workbook  = writer.book
             worksheet = writer.sheets["10. Identity Risk Register"]
             
-            # Setup colors based on risk bands
-            fmt_critical = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-            fmt_high     = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C5700'})
+            # Formats
+            red_fmt = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
+            yellow_fmt = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C5700'})
             
-            # Apply formatting to the Risk_Band column (D)
-            worksheet.conditional_format(1, 3, len(risk_register), 3, {
-                'type':     'cell',
-                'criteria': 'equal to',
-                'value':    '"CRITICAL"',
-                'format':   fmt_critical
+            # Apply to Risk_Band column
+            worksheet.conditional_format('D2:D5000', {
+                'type': 'cell', 'criteria': 'equal to', 'value': '"CRITICAL"', 'format': red_fmt
             })
-            worksheet.conditional_format(1, 3, len(risk_register), 3, {
-                'type':     'cell',
-                'criteria': 'equal to',
-                'value':    '"HIGH"',
-                'format':   fmt_high
+            worksheet.conditional_format('D2:D5000', {
+                'type': 'cell', 'criteria': 'equal to', 'value': '"HIGH"', 'format': yellow_fmt
             })
 
     return output.getvalue()
