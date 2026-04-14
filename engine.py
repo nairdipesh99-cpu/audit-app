@@ -36,7 +36,6 @@ DEPT_SYNONYMS = {
 }
 
 sev_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]
-SOD_RULES = []
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  CORE AUDIT ENGINE
@@ -44,29 +43,28 @@ SOD_RULES = []
 
 def run_audit(hr_df, sys_df, start_date, end_date, dormant, expiry, fuzzy, max_sys, frameworks):
     """
-    Main audit execution logic.
-    Restored from placeholder to functional logic.
+    Main audit execution logic. 
+    Restored logic to scan for Orphaned Accounts, Terminated Users, and Dormancy.
     """
     findings = []
     
-    # 1. Standardise Column Names for processing
+    # Standardise column names for matching
     hr_df.columns = [c.strip() for c in hr_df.columns]
     sys_df.columns = [c.strip() for c in sys_df.columns]
     
-    # Identify key columns (Email is the primary join)
-    hr_email_col = next((c for c in hr_df.columns if "email" in c.lower()), None)
-    sys_email_col = next((c for c in sys_df.columns if "email" in c.lower()), None)
+    # Identify Email/Identity columns
+    hr_email_col = next((c for c in hr_df.columns if "email" in c.lower() or "user" in c.lower()), None)
+    sys_email_col = next((c for c in sys_df.columns if "email" in c.lower() or "user" in c.lower()), None)
 
     if not hr_email_col or not sys_email_col:
-        # Return empty if we can't link data
-        return pd.DataFrame(columns=["Severity", "IssueType", "Email", "Department", "Check"]), 0, ["Missing Email columns"]
+        return pd.DataFrame(columns=["Severity", "IssueType", "Email", "Department", "Check"]), 0, ["Required columns not found"]
 
-    # 2. RUN AUDIT CHECKS (Logic restored)
+    # 1. SCAN SYSTEM ACCESS AGAINST HR MASTER
     for _, sys_row in sys_df.iterrows():
-        email = sys_row[sys_email_col]
-        hr_record = hr_df[hr_df[hr_email_col] == email]
+        email = str(sys_row[sys_email_col]).strip()
+        hr_record = hr_df[hr_df[hr_email_col].astype(str).str.strip() == email]
         
-        # Check: Orphaned Account (Account in system but not in HR)
+        # FINDING: Orphaned Account
         if hr_record.empty:
             findings.append({
                 "Severity": "CRITICAL",
@@ -75,13 +73,13 @@ def run_audit(hr_df, sys_df, start_date, end_date, dormant, expiry, fuzzy, max_s
                 "Department": "Unknown",
                 "Check": "Orphaned Account"
             })
-            continue # Skip further checks if orphaned
-        
-        # Check: Terminated with Active Account
+            continue 
+
+        # FINDING: Terminated with Active Account
         status_col = next((c for c in hr_df.columns if "status" in c.lower()), None)
         if status_col:
             status = str(hr_record.iloc[0][status_col]).lower()
-            if status in ["terminated", "inactive", "left", "offboarded"]:
+            if any(term_word in status for term_word in ["term", "left", "inactive", "offboard"]):
                 findings.append({
                     "Severity": "CRITICAL",
                     "IssueType": "Leavers Process",
@@ -90,7 +88,7 @@ def run_audit(hr_df, sys_df, start_date, end_date, dormant, expiry, fuzzy, max_s
                     "Check": "Terminated with Active Account"
                 })
 
-        # Check: Dormancy
+        # FINDING: Dormancy / Inactive Account
         login_col = next((c for c in sys_df.columns if "login" in c.lower() or "last" in c.lower()), None)
         if login_col:
             try:
@@ -114,29 +112,8 @@ def run_audit(hr_df, sys_df, start_date, end_date, dormant, expiry, fuzzy, max_s
     return findings_df, 0, []
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  SUPPORTING FUNCTIONS
+#  UTILITIES & EXPORT
 # ─────────────────────────────────────────────────────────────────────────────
-
-def generate_opinion(findings_df, meta):
-    return "The IAM landscape shows significant gaps in leaver processing."
-
-def generate_ai_opinion(findings_df, meta):
-    return f"AI Insight: Found {len(findings_df)} issues for {meta['client']}."
-
-def generate_audit_sample(findings_df):
-    return findings_df.head(10)
-
-def add_sample_sheet(writer, sample_df):
-    sample_df.to_excel(writer, sheet_name="Audit Sample", index=False)
-
-def ocr_via_ai(file): return "OCR data"
-def load_sod_matrix(file): return {}
-def extract_text(file): return "text"
-def parse_soa_sod_rules(text): return []
-def load_rbac_matrix(file): return {}
-def load_privileged_registry(file): return pd.DataFrame()
-def run_rbac_checks(hr, sys, matrix): return pd.DataFrame()
-def run_registry_checks(sys, registry): return pd.DataFrame()
 
 def detect_doc_type(file):
     name = file.name.lower()
@@ -144,30 +121,27 @@ def detect_doc_type(file):
     if "access" in name or "sys" in name: return "system_access"
     return "other"
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  EXCEL GENERATION
-# ─────────────────────────────────────────────────────────────────────────────
+def generate_ai_opinion(findings_df, meta):
+    return f"Engagement: {meta.get('client')}. Total findings: {len(findings_df)}."
 
 def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end, excluded_count, meta, opinion_text):
     output = io.BytesIO()
     
+    # Integrate Identity Risk into Findings
     if not findings_df.empty:
         findings_df = identity_risk.compute_irs(findings_df, scope_end)
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         findings_df.to_excel(writer, sheet_name="Findings", index=False)
         
-        # SHEET 10: IDENTITY RISK REGISTER
+        # Build Sheet 10
         risk_register = identity_risk.build_risk_register(findings_df)
         if not risk_register.empty:
             risk_register.to_excel(writer, sheet_name="10. Identity Risk Register", index=False)
             
             workbook  = writer.book
             red_fmt = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
-            yellow_fmt = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C5700'})
-            
             worksheet = writer.sheets["10. Identity Risk Register"]
             worksheet.conditional_format('D2:D5000', {'type': 'cell', 'criteria': 'equal to', 'value': '"CRITICAL"', 'format': red_fmt})
-            worksheet.conditional_format('D2:D5000', {'type': 'cell', 'criteria': 'equal to', 'value': '"HIGH"', 'format': yellow_fmt})
 
     return output.getvalue()
