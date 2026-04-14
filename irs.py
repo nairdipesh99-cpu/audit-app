@@ -25,6 +25,7 @@ W_PRIVILEGE  = 0.12
 W_CONTRACTOR = 0.08
 
 # Severity point values
+# Engine emits "🔴 CRITICAL" — strip emoji prefix before lookup (handled in _score_severity)
 SEV_POINTS = {
     "CRITICAL": 20,
     "HIGH":     10,
@@ -32,11 +33,13 @@ SEV_POINTS = {
     "LOW":       2,
 }
 
-# Critical-flag checks (check names as they appear in findings_df["Check"])
+# Critical-flag checks — matched against findings_df["IssueType"] (engine output column)
 CRITICAL_FLAG_CHECKS = {
     "Orphaned Account",
     "Terminated with Active Account",
+    "Terminated Employee with Active Account",
     "Post-Termination Login",
+    "Toxic Access (SoD Violation)",
     "SoD Violation",
 }
 
@@ -75,13 +78,27 @@ def _parse_date(val) -> Optional[date]:
         return None
 
 
+def _strip_sev(s: str) -> str:
+    """
+    Normalise engine severity strings to bare keyword.
+    "🔴 CRITICAL" → "CRITICAL", "🟠 HIGH" → "HIGH", etc.
+    Strips leading emoji + space if present.
+    """
+    s = s.upper().strip()
+    for kw in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        if kw in s:
+            return kw
+    return s
+
+
 def _score_severity(row_checks: list[str], row_severities: list[str]) -> float:
     """
     Component A — Severity-weighted finding count (0–1).
     Sum severity points, cap at 100 raw, normalise to 0–1.
     Max realistic raw = 4 CRITICAL (80) + 4 HIGH (40) = 120 → cap at 100.
+    Engine emits emoji-prefixed strings — _strip_sev normalises before lookup.
     """
-    raw = sum(SEV_POINTS.get(s.upper().strip(), 0) for s in row_severities)
+    raw = sum(SEV_POINTS.get(_strip_sev(s), 0) for s in row_severities)
     return min(raw, 100) / 100.0
 
 
@@ -167,51 +184,67 @@ def _aggregate_identity_rows(group: pd.DataFrame, scope_end: date) -> dict:
     Given all finding rows for one identity, compute all five component scores
     and return a dict with the composite IRS and band.
 
-    Expected columns consumed (all optional — degrades gracefully):
-      Severity, Check, Last_Login, Role_Count, System_Count,
-      Employment_Type, Contract_Expiry
+    Columns consumed — mapped to actual engine findings_df output names:
+      IssueType       (critical flag check)
+      Severity        (emoji-prefixed: "🔴 CRITICAL")
+      LastLoginDate   (dormancy)
+      RoleCount       (privilege breadth — optional)
+      SystemCount     (privilege breadth — optional)
+      EmploymentType  (contractor risk — optional)
+      ContractExpiry  (contractor risk — optional)
     """
-    checks     = group["Check"].dropna().tolist()     if "Check"     in group.columns else []
-    severities = group["Severity"].dropna().tolist()  if "Severity"  in group.columns else []
+    # IssueType is the engine column — used for both severity lookup and critical flag
+    issue_types = group["IssueType"].dropna().tolist() if "IssueType" in group.columns else []
+    severities  = group["Severity"].dropna().tolist()  if "Severity"  in group.columns else []
 
-    # Last login — take the most recent across rows for this identity
+    # Last login — engine column is LastLoginDate
     last_login = None
-    if "Last_Login" in group.columns:
-        ll_series = group["Last_Login"].dropna()
-        if not ll_series.empty:
-            parsed = [_parse_date(v) for v in ll_series]
-            valid  = [d for d in parsed if d is not None]
-            last_login = max(valid) if valid else None
+    for col in ("LastLoginDate", "Last_Login", "LastLogin"):
+        if col in group.columns:
+            ll_series = group[col].dropna()
+            if not ll_series.empty:
+                parsed = [_parse_date(v) for v in ll_series]
+                valid  = [d for d in parsed if d is not None]
+                last_login = max(valid) if valid else None
+            break
 
-    # Role / system count — take max across rows
+    # Role / system count — try both naming conventions
     role_count   = 0
     system_count = 0
-    if "Role_Count" in group.columns:
-        try:
-            role_count = pd.to_numeric(group["Role_Count"], errors="coerce").max()
-            role_count = 0 if pd.isna(role_count) else role_count
-        except Exception:
-            pass
-    if "System_Count" in group.columns:
-        try:
-            system_count = pd.to_numeric(group["System_Count"], errors="coerce").max()
-            system_count = 0 if pd.isna(system_count) else system_count
-        except Exception:
-            pass
+    for col in ("RoleCount", "Role_Count"):
+        if col in group.columns:
+            try:
+                role_count = pd.to_numeric(group[col], errors="coerce").max()
+                role_count = 0 if pd.isna(role_count) else role_count
+            except Exception:
+                pass
+            break
+    for col in ("SystemCount", "System_Count"):
+        if col in group.columns:
+            try:
+                system_count = pd.to_numeric(group[col], errors="coerce").max()
+                system_count = 0 if pd.isna(system_count) else system_count
+            except Exception:
+                pass
+            break
 
-    # Employment / expiry — take first non-null value
-    emp_type   = None
-    exp_date   = None
-    if "Employment_Type" in group.columns:
-        vals = group["Employment_Type"].dropna()
-        emp_type = vals.iloc[0] if not vals.empty else None
-    if "Contract_Expiry" in group.columns:
-        vals = group["Contract_Expiry"].dropna()
-        exp_date = vals.iloc[0] if not vals.empty else None
+    # Employment / expiry — try both naming conventions
+    emp_type = None
+    exp_date = None
+    for col in ("EmploymentType", "Employment_Type", "ContractType"):
+        if col in group.columns:
+            vals = group[col].dropna()
+            emp_type = vals.iloc[0] if not vals.empty else None
+            break
+    for col in ("ContractExpiry", "Contract_Expiry", "ContractEndDate"):
+        if col in group.columns:
+            vals = group[col].dropna()
+            exp_date = vals.iloc[0] if not vals.empty else None
+            break
 
     # Component scores
-    c_sev        = _score_severity(checks, severities)
-    c_critical   = _score_critical_flag(checks)
+    c_sev        = _score_severity(issue_types, severities)
+    c_critical   = _score_critical_flag(issue_types)
     c_dormancy   = _score_dormancy(last_login, scope_end)
     c_privilege  = _score_privilege(role_count, system_count)
     c_contractor = _score_contractor(emp_type, exp_date)
