@@ -14,6 +14,7 @@ from engine import (
     sev_order, SOD_RULES,
 )
 from components import inject_css, render_header, render_sidebar_brand, led_status_bar, led_dot
+from irs import compute_irs, build_risk_register, irs_summary_stats
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SESSION STATE
@@ -49,10 +50,8 @@ def _set_year():
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  DOCUMENT PARSER
-#  Reads any uploaded file and returns its text content
 # ─────────────────────────────────────────────────────────────────────────────
 def extract_text(uploaded_file, max_chars=5000):
-    """Extract text from PDF, DOCX, TXT or XLSX. Returns empty string on failure."""
     if uploaded_file is None:
         return ""
     name = uploaded_file.name.lower()
@@ -89,11 +88,6 @@ def extract_text(uploaded_file, max_chars=5000):
     return ""
 
 def detect_doc_type(f):
-    """
-    Auto-detect document type from filename.
-    Returns one of: hr_master | system_access | soa | access_policy |
-                    jml_procedure | risk_register | other
-    """
     if f is None:
         return "other"
     name = f.name.lower()
@@ -120,17 +114,12 @@ def detect_doc_type(f):
     return "other"
 
 def parse_soa_sod_rules(soa_text):
-    """
-    Try to extract SoD rules from uploaded SOA/policy text.
-    Returns a dict of {dept: [forbidden_access_levels]} or empty dict.
-    """
     import re
     rules = {}
-    # Look for patterns like "Finance: Admin, DBAdmin" or "Sales staff: Finance, Payroll"
-    dept_keywords = ["Finance","IT","HR","Sales","Marketing","Operations","Procurement","Legal","Risk","Support"]
+    dept_keywords   = ["Finance","IT","HR","Sales","Marketing","Operations","Procurement","Legal","Risk","Support"]
     access_keywords = ["Admin","Finance","Payroll","DBAdmin","HR","SysAdmin","FullControl","SuperAdmin","Root"]
     for dept in dept_keywords:
-        pattern = rf"{dept}[^.\n]{{0,60}}({"|".join(access_keywords)})"
+        pattern = rf"{dept}[^.\n]{{0,60}}({'|'.join(access_keywords)})"
         matches = re.findall(pattern, soa_text, re.IGNORECASE)
         if matches:
             rules[dept] = list(set(matches))
@@ -138,12 +127,7 @@ def parse_soa_sod_rules(soa_text):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  PAGE CONFIG
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  SIDEBAR — must come before main content in Streamlit
+#  SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_brand()
@@ -175,8 +159,6 @@ with st.sidebar:
 
     st.divider()
     st.markdown("#### Audit scope")
-    # Year range: current year back to 15 years ago
-    # Supports forensic audits and fraud investigations
     _yr_opts = list(range(today.year, today.year - 16, -1))
 
     def _fmt_year(y):
@@ -191,7 +173,7 @@ with st.sidebar:
         index=1,
         format_func=_fmt_year,
         key="audit_year_sel",
-        help="Select any year from the last 15 years. For fraud investigations or historical audits, go as far back as needed."
+        help="Select any year from the last 15 years.",
     )
     sb1, sb2 = st.columns(2)
     sb1.button("Full Year",    use_container_width=True, on_click=_set_year, type="primary")
@@ -202,23 +184,11 @@ with st.sidebar:
     st.caption("Or set a custom date range below for multi-year or specific period audits.")
     dc1, dc2 = st.columns(2)
     with dc1:
-        st.date_input(
-            "From",
-            key="ss_start",
-            on_change=_date_chg,
-            min_value=date(today.year - 15, 1, 1),
-            max_value=today,
-            help="Start of audit scope. Can go back up to 15 years for forensic reviews."
-        )
+        st.date_input("From", key="ss_start", on_change=_date_chg,
+                      min_value=date(today.year - 15, 1, 1), max_value=today)
     with dc2:
-        st.date_input(
-            "To",
-            key="ss_end",
-            on_change=_date_chg,
-            min_value=date(today.year - 15, 1, 2),
-            max_value=today,
-            help="End of audit scope."
-        )
+        st.date_input("To",   key="ss_end",   on_change=_date_chg,
+                      min_value=date(today.year - 15, 1, 2), max_value=today)
 
     date_err = st.session_state["ss_start"] >= st.session_state["ss_end"]
     if date_err: st.error("From must be before To.")
@@ -241,10 +211,8 @@ with st.sidebar:
     MAX_SYSTEMS          = st.slider("Max systems per user",    2,   10,  3)
 
 
-
-
 # ─────────────────────────────────────────────────────────────────────────────
-#  HEADER + DOCUMENT UPLOAD ZONE
+#  HEADER + UPLOAD ZONE
 # ─────────────────────────────────────────────────────────────────────────────
 render_header()
 
@@ -263,15 +231,14 @@ uploaded_files = st.file_uploader(
     key="multi_upload",
 )
 
-# ── Auto-classify uploaded files ─────────────────────────────────────────────
+# ── Auto-classify ─────────────────────────────────────────────────────────────
 hr_file   = None
 sys_file  = None
-doc_files = []   # policies, SOA, standards, etc.
+doc_files = []
 
 if uploaded_files:
     classified = {f.name: detect_doc_type(f) for f in uploaded_files}
 
-    # Show what was detected
     st.markdown("**Files detected:**")
     det_cols = st.columns(min(len(uploaded_files), 4))
     for i, f in enumerate(uploaded_files):
@@ -287,7 +254,6 @@ if uploaded_files:
                  "standard":"Standard / Policy","other":"Other document"}.get(dtype,"Document")
         det_cols[i % 4].success(f"{icon} {f.name} — {label}")
 
-    # Assign files
     for f in uploaded_files:
         dtype = classified[f.name]
         if dtype == "hr_master" and hr_file is None:
@@ -297,41 +263,30 @@ if uploaded_files:
         else:
             doc_files.append((f, dtype))
 
-    # If no auto-detected HR/system files, let user manually assign
     if not hr_file or not sys_file:
         st.warning("⚠️ Could not auto-detect all required files. Please assign them manually:")
-        other_files = [f for f in uploaded_files]
-        file_names  = [f.name for f in other_files]
+        file_names = [f.name for f in uploaded_files]
         ma1, ma2 = st.columns(2)
         with ma1:
-            hr_sel = st.selectbox(
-                "Which file is the HR Master?",
-                options=["— not uploaded —"] + file_names,
-                key="hr_manual_sel",
-            )
+            hr_sel = st.selectbox("Which file is the HR Master?",
+                                  options=["— not uploaded —"] + file_names, key="hr_manual_sel")
             if hr_sel != "— not uploaded —":
                 hr_file = next(f for f in uploaded_files if f.name == hr_sel)
         with ma2:
-            sys_sel = st.selectbox(
-                "Which file is the System Access list?",
-                options=["— not uploaded —"] + file_names,
-                key="sys_manual_sel",
-            )
+            sys_sel = st.selectbox("Which file is the System Access list?",
+                                   options=["— not uploaded —"] + file_names, key="sys_manual_sel")
             if sys_sel != "— not uploaded —":
                 sys_file = next(f for f in uploaded_files if f.name == sys_sel)
 
-
-# ── Feature 1: Legacy system / OCR upload ────────────────────────────────────
+# ── Legacy / OCR upload ───────────────────────────────────────────────────────
 with st.expander("📸 Legacy system upload — screenshot or PDF (AI-powered extraction)", expanded=False):
     st.caption(
         "For old systems that only produce screenshots or PDFs. "
-        "Upload an image or PDF — AI extracts the account data and converts it to the right format automatically."
+        "Upload an image or PDF — AI extracts the account data automatically."
     )
     ocr_file = st.file_uploader(
         "Upload screenshot or PDF of legacy system report",
-        type=["png","jpg","jpeg","pdf"],
-        key="ocr_upload",
-        label_visibility="collapsed",
+        type=["png","jpg","jpeg","pdf"], key="ocr_upload", label_visibility="collapsed",
     )
     if ocr_file:
         if st.button("🔍 Extract data from image", type="primary"):
@@ -342,17 +297,14 @@ with st.expander("📸 Legacy system upload — screenshot or PDF (AI-powered ex
             elif ocr_df is not None and not ocr_df.empty:
                 st.success(f"Extracted {len(ocr_df)} account rows from the image.")
                 st.dataframe(ocr_df, use_container_width=True, hide_index=True)
-                # Allow download as xlsx for uploading as system access file
                 buf = io.BytesIO()
                 ocr_df.to_excel(buf, index=False)
                 buf.seek(0)
                 st.download_button(
                     "📥 Download extracted data as System_Access.xlsx",
-                    data=buf.getvalue(),
-                    file_name="System_Access_OCR_Extracted.xlsx",
+                    data=buf.getvalue(), file_name="System_Access_OCR_Extracted.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
-                st.caption("Download this file, then upload it as your System Access file above to run the full audit.")
             else:
                 st.warning("No account rows could be extracted. Try a clearer image.")
 
@@ -360,12 +312,11 @@ st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  DOCUMENT INTELLIGENCE PANEL
-#  Show what the tool extracted from each non-data document
 # ─────────────────────────────────────────────────────────────────────────────
-doc_context   = {}   # {dtype: text}
-soa_sod_extra   = {}   # SoD rules extracted from uploaded SOA/policy
-rbac_matrix_data = {}   # RBAC Matrix: {JobTitle: [PermittedAccessLevels]}
-registry_df_data = None  # Privileged User Registry DataFrame
+doc_context      = {}
+soa_sod_extra    = {}
+rbac_matrix_data = {}
+registry_df_data = None
 
 if doc_files:
     with st.expander(f"📄 Document intelligence — {len(doc_files)} policy/standard document(s) parsed", expanded=False):
@@ -377,42 +328,33 @@ if doc_files:
                      "standard":"Audit Standard / Policy","other":"Supporting document"}.get(dtype, dtype)
             st.markdown(f"**{f.name}** — detected as: *{label}*")
             if text and not text.startswith("["):
-                st.caption(f"Extracted {len(text):,} characters. Findings will reference this document.")
-                # Load RBAC Matrix
+                st.caption(f"Extracted {len(text):,} characters.")
                 if dtype == "rbac_matrix":
                     f.seek(0)
                     rbac_rules, rbac_err = load_rbac_matrix(f)
                     if rbac_rules:
                         rbac_matrix_data.update(rbac_rules)
-                        st.caption(f"RBAC Matrix loaded — {len(rbac_rules)} job role entitlements. Accounts will be checked against permitted access levels.")
+                        st.caption(f"RBAC Matrix loaded — {len(rbac_rules)} job role entitlements.")
                     elif rbac_err:
                         st.warning(f"Could not read RBAC Matrix: {rbac_err}")
-
-                # Load Privileged User Registry
                 elif dtype == "privileged_registry":
                     f.seek(0)
                     reg_df, reg_err = load_privileged_registry(f)
                     if reg_df is not None:
                         registry_df_data = reg_df
-                        st.caption(f"Privileged User Registry loaded — {len(reg_df)} entries. All Admin/privileged accounts will be cross-referenced.")
+                        st.caption(f"Privileged User Registry loaded — {len(reg_df)} entries.")
                     elif reg_err:
                         st.warning(f"Could not read Privileged User Registry: {reg_err}")
-
-                # Try to extract SoD rules from SOA or dedicated SoD matrix
                 elif dtype in ("soa","access_policy","sod_matrix","other"):
-                    # First try structured Excel SoD matrix parse
                     if f.name.lower().endswith((".xlsx",".xls")):
                         f.seek(0)
                         matrix_rules, matrix_err = load_sod_matrix(f)
                         if matrix_rules:
-                            st.caption(f"Loaded {len(matrix_rules)} SoD rules from Excel matrix — overrides hardcoded defaults.")
+                            st.caption(f"Loaded {len(matrix_rules)} SoD rules from Excel matrix.")
                             soa_sod_extra.update(matrix_rules)
-                        elif not matrix_err:
-                            pass
-                    # Also try text-based extraction from SOA
                     extra = parse_soa_sod_rules(text)
                     if extra:
-                        st.caption(f"Extracted {len(extra)} SoD rules from document text — applied to audit.")
+                        st.caption(f"Extracted {len(extra)} SoD rules from document text.")
                         soa_sod_extra.update(extra)
             else:
                 st.caption(text or "No text extracted.")
@@ -430,14 +372,12 @@ if hr_file and sys_file:
     hr_df  = read_file(hr_file)
     sys_df = read_file(sys_file)
 
-    # Clear findings cache when new files are uploaded
     if "findings_cache" in st.session_state:
         del st.session_state["findings_cache"]
         del st.session_state["excluded_cache"]
         if "_last_cache_key" in st.session_state:
             del st.session_state["_last_cache_key"]
 
-    # Column validation
     hr_miss  = {"Email","FullName","Department"} - set(hr_df.columns)
     sys_miss = {"Email","AccessLevel"}           - set(sys_df.columns)
     if hr_miss or sys_miss:
@@ -447,7 +387,6 @@ if hr_file and sys_file:
         st.info("Required columns — HR Master: Email, FullName, Department | System Access: Email, AccessLevel")
         st.stop()
 
-    # Department filter
     all_depts = sorted(set(
         list(hr_df["Department"].dropna().unique()) +
         (list(sys_df["Department"].dropna().unique()) if "Department" in sys_df.columns else [])
@@ -469,7 +408,6 @@ if hr_file and sys_file:
 
     st.divider()
 
-    # Population completeness gate
     if not st.session_state.get("confirmed", False):
         st.markdown("### ⚠️ Confirm data completeness")
         g1,g2,g3 = st.columns(3)
@@ -478,7 +416,7 @@ if hr_file and sys_file:
         g3.metric("Policy docs uploaded", len(doc_files))
         st.markdown("""
 Before the scan runs, confirm that the data you uploaded is the **complete, unfiltered population** —
-not a sample or extract pre-filtered by the client. This confirmation forms part of your audit workpaper evidence.
+not a sample or extract pre-filtered by the client.
         """)
         if st.button("✅  I confirm — this is the complete population. Proceed to scope & run.",
                      type="primary", use_container_width=True):
@@ -486,7 +424,6 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
             st.rerun()
         st.stop()
 
-    # Scope lock gate
     if not st.session_state.get("locked", False):
         s1,s2,s3 = st.columns(3)
         s1.metric("Population confirmed", f"{len(hr_df_f):,} HR | {len(sys_df_f):,} system")
@@ -498,7 +435,6 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
         )
         st.stop()
 
-    # Run audit — with session state caching so tabs don't re-run the engine
     _cache_key = (
         len(hr_df_f), len(sys_df_f),
         str(SCOPE_START), str(SCOPE_END),
@@ -512,7 +448,7 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
 
     if (st.session_state.get("_last_cache_key") != _cache_key or
             "findings_cache" not in st.session_state):
-        with st.spinner("🔍 Running 18 checks across all identities — this may take a moment for large files..."):
+        with st.spinner("🔍 Running 18 checks across all identities…"):
             findings_df, excluded_count, _col_warnings = run_audit(
                 hr_df_f, sys_df_f,
                 SCOPE_START, SCOPE_END,
@@ -523,18 +459,26 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
                 rbac_matrix=rbac_matrix_data if rbac_matrix_data else None,
                 registry_df=registry_df_data,
             )
-        st.session_state["findings_cache"]  = findings_df
-        st.session_state["excluded_cache"]  = excluded_count
-        st.session_state["_last_cache_key"] = _cache_key
+        # ── IRS computation ────────────────────────────────────────────────
+        findings_df   = compute_irs(findings_df, SCOPE_END)
+        risk_register = build_risk_register(findings_df)
+        irs_stats     = irs_summary_stats(risk_register)
+
+        st.session_state["findings_cache"]      = findings_df
+        st.session_state["excluded_cache"]      = excluded_count
+        st.session_state["risk_register_cache"] = risk_register
+        st.session_state["irs_stats_cache"]     = irs_stats
+        st.session_state["_last_cache_key"]     = _cache_key
     else:
-        findings_df    = st.session_state["findings_cache"]
-        excluded_count = st.session_state["excluded_cache"]
+        findings_df   = st.session_state["findings_cache"]
+        excluded_count= st.session_state["excluded_cache"]
+        risk_register = st.session_state.get("risk_register_cache", pd.DataFrame())
+        irs_stats     = st.session_state.get("irs_stats_cache", {})
 
     in_scope_n = len(sys_df_f) - excluded_count
     total = len(findings_df)
 
-    # Scope & doc banner
-    doc_names = ", ".join(f.name for f,_ in doc_files) if doc_files else "None uploaded"
+    doc_names  = ", ".join(f.name for f,_ in doc_files) if doc_files else "None uploaded"
     dept_label = f"{len(selected_depts)} dept(s): {', '.join(selected_depts)}" if selected_depts else "All departments"
 
     b1,b2,b3,b4 = st.columns(4)
@@ -543,35 +487,46 @@ not a sample or extract pre-filtered by the client. This confirmation forms part
     b3.info(f"🏢 Departments: {dept_label}")
     b4.info(f"📄 Docs: {len(doc_files)} policy/standard file(s)")
 
-    # Scope exclusion warning
     if excluded_count == len(sys_df_f) and len(sys_df_f) > 0:
-            st.error(
-                f"⚠️ All {len(sys_df_f):,} accounts were excluded by the scope filter. "
-                f"The dates in your System Access file do not fall within "
-                f"**{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}**."
-            )
-            st.markdown("""
+        st.error(
+            f"⚠️ All {len(sys_df_f):,} accounts were excluded by the scope filter. "
+            f"The dates in your System Access file do not fall within "
+            f"**{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}**."
+        )
+        st.markdown("""
 **How to fix this:**
-1. Check what year your data is from — look at the LastLoginDate or AccountCreatedDate columns in your System Access file
+1. Check what year your data is from — look at the LastLoginDate or AccountCreatedDate columns
 2. Use the **year selector** in the sidebar to match that year
 3. Click **Full Year** then **GO** again
-
-For forensic or historical audits going back several years, select the exact year your data covers.
-The tool supports up to 15 years back.
-            """)
-            st.stop()
+        """)
+        st.stop()
 
     # ── RESULTS ──────────────────────────────────────────────────────────────
     st.divider()
     st.markdown("### 📊 Audit results")
     def cnt(col,val): return len(findings_df[findings_df[col]==val]) if total else 0
 
+    # ── Row 1: core metrics ───────────────────────────────────────────────────
     m = st.columns(5)
-    m[0].metric("Total findings",   total)
-    m[1].metric("🔴 Critical",       cnt("Severity","🔴 CRITICAL"))
-    m[2].metric("🟠 High",           cnt("Severity","🟠 HIGH"))
-    m[3].metric("🟡 Medium",         cnt("Severity","🟡 MEDIUM"))
-    m[4].metric("Accounts scanned",  f"{in_scope_n:,}")
+    m[0].metric("Total findings",  total)
+    m[1].metric("🔴 Critical",      cnt("Severity","🔴 CRITICAL"))
+    m[2].metric("🟠 High",          cnt("Severity","🟠 HIGH"))
+    m[3].metric("🟡 Medium",        cnt("Severity","🟡 MEDIUM"))
+    m[4].metric("Accounts scanned", f"{in_scope_n:,}")
+
+    # ── Row 2: IRS summary metrics ────────────────────────────────────────────
+    if irs_stats:
+        st.divider()
+        st.markdown("#### 🎯 Identity Risk Score — population summary")
+        i1,i2,i3,i4,i5,i6 = st.columns(6)
+        i1.metric("Mean IRS",          f"{irs_stats.get('mean_score', 0)}")
+        i2.metric("Median IRS",        f"{irs_stats.get('median_score', 0)}")
+        i3.metric("Highest IRS",       f"{irs_stats.get('max_score', 0)}")
+        i4.metric("🔴 Critical band",  irs_stats.get("critical_count", 0),
+                  help="Identities scoring 75–100")
+        i5.metric("🟠 High band",      irs_stats.get("high_count", 0),
+                  help="Identities scoring 50–74")
+        i6.metric("% Critical band",   f"{irs_stats.get('pct_critical', 0)}%")
 
     if total:
         st.divider()
@@ -608,14 +563,16 @@ The tool supports up to 15 years back.
     st.divider()
 
     # ── TABS ─────────────────────────────────────────────────────────────────
-    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
-        "🔎  Findings","🛠️  Remediation","⚖️  Frameworks","📈  Analysis","✍️  Opinion","🎯  Audit Sample"
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs([
+        "🔎  Findings","🛠️  Remediation","⚖️  Frameworks",
+        "📈  Analysis","🎯  Risk Register","✍️  Opinion","🎲  Audit Sample",
     ])
 
     sdf = findings_df.copy()
     sdf["_o"] = sdf["Severity"].map(sev_order).fillna(9)
     sdf = sdf.sort_values("_o").drop(columns="_o")
 
+    # ── Tab 1: Findings ───────────────────────────────────────────────────────
     with tab1:
         t1a, t1b, t1c = st.columns([3, 1, 1])
         with t1a:
@@ -639,30 +596,42 @@ The tool supports up to 15 years back.
 
         st.caption(f"Showing {len(filtered):,} of {total:,} findings — click any row to expand details")
 
-        # ── Collapsed summary table — fast to render ──────────────────────────
-        # Show only key columns — no heavy text columns
-        summary_cols = [c for c in ["Severity","IssueType","Email","FullName","Department","AccessLevel"]
-                        if c in filtered.columns]
-        st.dataframe(
-            filtered[summary_cols].reset_index(drop=True),
-            use_container_width=True,
-            hide_index=True,
-            height=min(400, 45 + len(filtered) * 35),
-            column_config={
-                "Severity":   st.column_config.TextColumn("Severity",    width="small"),
-                "IssueType":  st.column_config.TextColumn("Issue",       width="medium"),
-                "Email":      st.column_config.TextColumn("Email",       width="medium"),
-                "FullName":   st.column_config.TextColumn("Name",        width="small"),
-                "Department": st.column_config.TextColumn("Department",  width="small"),
-                "AccessLevel":st.column_config.TextColumn("Access",      width="small"),
-            }
-        )
+        # ── Summary table — includes IRS columns if present ───────────────────
+        base_cols = ["Severity","IssueType","Email","FullName","Department","AccessLevel"]
+        irs_display_cols = ["identity_risk_score","risk_band"]
+        summary_cols = [c for c in base_cols + irs_display_cols if c in filtered.columns]
 
-        # ── Expandable detail per finding ─────────────────────────────────────
+        col_cfg = {
+            "Severity":             st.column_config.TextColumn("Severity",    width="small"),
+            "IssueType":            st.column_config.TextColumn("Issue",       width="medium"),
+            "Email":                st.column_config.TextColumn("Email",       width="medium"),
+            "FullName":             st.column_config.TextColumn("Name",        width="small"),
+            "Department":           st.column_config.TextColumn("Department",  width="small"),
+            "AccessLevel":          st.column_config.TextColumn("Access",      width="small"),
+            "identity_risk_score":  st.column_config.NumberColumn("IRS",       width="small",
+                                        help="Identity Risk Score 0–100"),
+            "risk_band":            st.column_config.TextColumn("Risk Band",   width="small"),
+        }
+
+        try:
+            st.dataframe(
+                filtered[summary_cols].reset_index(drop=True),
+                use_container_width=True,
+                hide_index=True,
+                height=min(400, 45 + len(filtered) * 35),
+                column_config=col_cfg,
+            )
+        except Exception:
+            st.dataframe(
+                filtered[summary_cols].reset_index(drop=True),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        # ── Expandable detail ─────────────────────────────────────────────────
         st.markdown("#### Finding details")
         st.caption("Expand any finding to see the full detail, risk statement and remediation steps.")
 
-        # Show max 100 at a time to prevent crashes
         MAX_EXPAND = 100
         show_df = filtered.head(MAX_EXPAND)
         if len(filtered) > MAX_EXPAND:
@@ -673,8 +642,11 @@ The tool supports up to 15 years back.
             itype = str(row.get("IssueType",""))
             email = str(row.get("Email",""))
             dept  = str(row.get("Department",""))
+            irs_v = row.get("identity_risk_score")
+            band  = row.get("risk_band","")
             ico   = "🔴" if "CRITICAL" in sev else ("🟠" if "HIGH" in sev else "🟡")
-            label = f"{ico} {itype} — {email} | {dept}"
+            irs_tag = f" | IRS {irs_v} ({band})" if irs_v is not None else ""
+            label = f"{ico} {itype} — {email} | {dept}{irs_tag}"
             with st.expander(label, expanded=False):
                 d1, d2 = st.columns([2, 1])
                 with d1:
@@ -685,6 +657,8 @@ The tool supports up to 15 years back.
                     st.markdown(f"**Access level:** `{row.get('AccessLevel','')}`")
                     if row.get('JobTitle'):
                         st.markdown(f"**Job title:** `{row.get('JobTitle','')}`")
+                    if irs_v is not None:
+                        st.markdown(f"**Identity Risk Score:** `{irs_v}` — `{band}`")
                     _di = row.get('DaysInactive')
                     try:
                         if _di is not None and str(_di).lower() not in ('nan','none','') and float(_di) > 0:
@@ -704,6 +678,7 @@ The tool supports up to 15 years back.
                 if fw_refs:
                     st.markdown("**Framework refs:** " + " · ".join(fw_refs))
 
+    # ── Tab 2: Remediation ────────────────────────────────────────────────────
     with tab2:
         sev_opts = ["All severities"]+sorted(sdf["Severity"].unique(), key=sev_order)
         rem_sev  = st.selectbox("Filter", sev_opts, key="rem_filter")
@@ -723,24 +698,24 @@ The tool supports up to 15 years back.
                 a2.markdown(f"**③ {row.get('Step 3 – Action','')}**")
                 a2.markdown(f"④ {row.get('Step 4 – Action','')}")
 
+    # ── Tab 3: Frameworks ─────────────────────────────────────────────────────
     with tab3:
         if doc_files:
             uploaded_doc_names = ", ".join(f.name for f,_ in doc_files)
-            st.info(f"📄 Documents parsed: **{uploaded_doc_names}** — findings are referenced against these documents and hardcoded framework mappings.")
+            st.info(f"📄 Documents parsed: **{uploaded_doc_names}**")
         fw_cols = [c for c in ["Severity","IssueType","Email","FullName","Department",
                                 "SOX Reference","ISO 27001 Ref","GDPR Reference","PCI-DSS Reference"]
                    if c in sdf.columns]
         st.dataframe(sdf[fw_cols], use_container_width=True, hide_index=True, height=420)
 
+    # ── Tab 4: Analysis ───────────────────────────────────────────────────────
     with tab4:
         st.markdown("### Risk analysis")
 
-        # ── Row 1: Pie chart + severity table + issue type table ─────────────
         pc1, pc2, pc3 = st.columns([2, 1, 1])
 
         with pc1:
             st.markdown("**Overall risk gap — severity distribution**")
-            # Build severity counts
             sev_map = {"🔴 CRITICAL": 0, "🟠 HIGH": 0, "🟡 MEDIUM": 0}
             for sev in findings_df["Severity"]:
                 if sev in sev_map:
@@ -748,36 +723,24 @@ The tool supports up to 15 years back.
             sev_labels = [s.split(" ", 1)[1] for s in sev_map.keys()]
             sev_vals   = list(sev_map.values())
             sev_colors = ["#E24B4A","#EF9F27","#F9CB42"]
-
-            # Build pie chart using plotly if available, else native bar
             try:
                 import plotly.graph_objects as go
                 fig = go.Figure(data=[go.Pie(
-                    labels=sev_labels,
-                    values=sev_vals,
-                    hole=0.45,
-                    marker=dict(colors=sev_colors,
-                                line=dict(color="#ffffff", width=2)),
-                    textinfo="label+percent",
-                    textfont=dict(size=13),
+                    labels=sev_labels, values=sev_vals, hole=0.45,
+                    marker=dict(colors=sev_colors, line=dict(color="#ffffff", width=2)),
+                    textinfo="label+percent", textfont=dict(size=13),
                     hovertemplate="%{label}<br>%{value} findings<br>%{percent}<extra></extra>",
                 )])
                 fig.update_layout(
-                    margin=dict(t=20, b=20, l=20, r=20),
-                    height=280,
-                    showlegend=False,
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(family="Arial", color="#404040"),
-                    annotations=[dict(
-                        text=f"<b>{total}</b><br>findings",
-                        x=0.5, y=0.5, font_size=14,
-                        showarrow=False, font_color="#1F3864"
-                    )]
+                    margin=dict(t=20,b=20,l=20,r=20), height=280,
+                    showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Arial",color="#404040"),
+                    annotations=[dict(text=f"<b>{total}</b><br>findings",
+                                      x=0.5, y=0.5, font_size=14, showarrow=False,
+                                      font_color="#1F3864")]
                 )
                 st.plotly_chart(fig, use_container_width=True)
             except ImportError:
-                # Fallback: simple bar chart
                 sev_df = pd.DataFrame({"Severity": sev_labels, "Count": sev_vals})
                 st.bar_chart(sev_df.set_index("Severity"))
 
@@ -785,7 +748,6 @@ The tool supports up to 15 years back.
             st.markdown("**By severity**")
             bsev = findings_df["Severity"].value_counts().reset_index()
             bsev.columns = ["Severity","Count"]
-            # Add percentage column
             bsev["% of total"] = (bsev["Count"] / total * 100).round(1).astype(str) + "%"
             st.dataframe(bsev, use_container_width=True, hide_index=True, height=260)
 
@@ -793,29 +755,22 @@ The tool supports up to 15 years back.
             st.markdown("**Error rate**")
             error_rate = round(total / in_scope_n * 100, 1) if in_scope_n > 0 else 0
             crit_rate  = round(cnt("Severity","🔴 CRITICAL") / in_scope_n * 100, 1) if in_scope_n > 0 else 0
-            st.metric("Overall error rate",  f"{error_rate}%", help="Findings as % of accounts scanned")
-            st.metric("Critical error rate", f"{crit_rate}%",  help="Critical findings as % of accounts scanned")
-            st.metric("Accounts clean",
-                f"{in_scope_n - total:,}",
-                help="Accounts with no findings")
-            st.metric("Accounts with issues",
-                f"{min(total, in_scope_n):,}",
-                help="Note: one account can have multiple findings")
+            st.metric("Overall error rate",  f"{error_rate}%")
+            st.metric("Critical error rate", f"{crit_rate}%")
+            st.metric("Accounts clean",      f"{in_scope_n - total:,}")
+            st.metric("Accounts with issues",f"{min(total, in_scope_n):,}")
 
         st.divider()
 
-        # ── Row 2: Department risk heatmap ────────────────────────────────────
         if "Department" in findings_df.columns:
             st.markdown("**Department risk breakdown**")
-            st.caption("Shows which departments have the most findings by severity — use this to prioritise your fieldwork.")
-
             dept_crit  = findings_df[findings_df["Severity"]=="🔴 CRITICAL"]["Department"].value_counts()
             dept_high  = findings_df[findings_df["Severity"]=="🟠 HIGH"]["Department"].value_counts()
             dept_med   = findings_df[findings_df["Severity"]=="🟡 MEDIUM"]["Department"].value_counts()
             all_depts_f= sorted(findings_df["Department"].dropna().unique())
 
             dept_heat = pd.DataFrame({
-                "Department": all_depts_f,
+                "Department":  all_depts_f,
                 "🔴 Critical": [dept_crit.get(d, 0) for d in all_depts_f],
                 "🟠 High":     [dept_high.get(d, 0) for d in all_depts_f],
                 "🟡 Medium":   [dept_med.get(d, 0)  for d in all_depts_f],
@@ -823,7 +778,6 @@ The tool supports up to 15 years back.
             dept_heat["Total"] = dept_heat["🔴 Critical"] + dept_heat["🟠 High"] + dept_heat["🟡 Medium"]
             dept_heat = dept_heat.sort_values("Total", ascending=False)
 
-            # Risk rating
             def risk_rating(row):
                 if row["🔴 Critical"] >= 5:  return "🔴 High Risk"
                 if row["🔴 Critical"] >= 1:  return "🟠 Elevated"
@@ -833,53 +787,42 @@ The tool supports up to 15 years back.
             dept_heat["Risk Rating"] = dept_heat.apply(risk_rating, axis=1)
 
             st.dataframe(
-                dept_heat,
-                use_container_width=True,
-                hide_index=True,
+                dept_heat, use_container_width=True, hide_index=True,
                 height=min(50 + len(dept_heat) * 35, 480),
                 column_config={
-                    "Department":   st.column_config.TextColumn("Department",   width="medium"),
-                    "🔴 Critical":  st.column_config.NumberColumn("🔴 Critical", width="small"),
-                    "🟠 High":      st.column_config.NumberColumn("🟠 High",     width="small"),
-                    "🟡 Medium":    st.column_config.NumberColumn("🟡 Medium",   width="small"),
-                    "Total":        st.column_config.NumberColumn("Total",       width="small"),
-                    "Risk Rating":  st.column_config.TextColumn("Risk Rating",   width="medium"),
+                    "Department":  st.column_config.TextColumn("Department",  width="medium"),
+                    "🔴 Critical": st.column_config.NumberColumn("🔴 Critical",width="small"),
+                    "🟠 High":     st.column_config.NumberColumn("🟠 High",    width="small"),
+                    "🟡 Medium":   st.column_config.NumberColumn("🟡 Medium",  width="small"),
+                    "Total":       st.column_config.NumberColumn("Total",      width="small"),
+                    "Risk Rating": st.column_config.TextColumn("Risk Rating",  width="medium"),
                 }
             )
 
-            # Department risk pie chart
             st.markdown("**Top 8 departments by total findings**")
             top8 = dept_heat.head(8)
             try:
                 import plotly.graph_objects as go
                 fig2 = go.Figure(data=[go.Bar(
-                    x=top8["Department"].tolist(),
-                    y=top8["🔴 Critical"].tolist(),
-                    name="Critical",
-                    marker_color="#E24B4A",
+                    x=top8["Department"].tolist(), y=top8["🔴 Critical"].tolist(),
+                    name="Critical", marker_color="#E24B4A",
                 )])
                 fig2.add_trace(go.Bar(
-                    x=top8["Department"].tolist(),
-                    y=top8["🟠 High"].tolist(),
-                    name="High",
-                    marker_color="#EF9F27",
+                    x=top8["Department"].tolist(), y=top8["🟠 High"].tolist(),
+                    name="High", marker_color="#EF9F27",
                 ))
                 fig2.add_trace(go.Bar(
-                    x=top8["Department"].tolist(),
-                    y=top8["🟡 Medium"].tolist(),
-                    name="Medium",
-                    marker_color="#F9CB42",
+                    x=top8["Department"].tolist(), y=top8["🟡 Medium"].tolist(),
+                    name="Medium", marker_color="#F9CB42",
                 ))
                 fig2.update_layout(
-                    barmode="stack",
-                    height=320,
-                    margin=dict(t=20, b=60, l=40, r=20),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(family="Arial", color="#404040"),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    xaxis=dict(tickangle=-30, gridcolor="rgba(0,0,0,0.05)"),
-                    yaxis=dict(gridcolor="rgba(0,0,0,0.05)", title="Findings"),
+                    barmode="stack", height=320,
+                    margin=dict(t=20,b=60,l=40,r=20),
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Arial",color="#404040"),
+                    legend=dict(orientation="h",yanchor="bottom",y=1.02,xanchor="right",x=1),
+                    xaxis=dict(tickangle=-30,gridcolor="rgba(0,0,0,0.05)"),
+                    yaxis=dict(gridcolor="rgba(0,0,0,0.05)",title="Findings"),
                 )
                 st.plotly_chart(fig2, use_container_width=True)
             except ImportError:
@@ -887,7 +830,6 @@ The tool supports up to 15 years back.
 
         st.divider()
 
-        # ── Row 3: Issue type breakdown + dormant chart ────────────────────────
         r3a, r3b = st.columns(2)
         with r3a:
             st.markdown("**By issue type**")
@@ -904,7 +846,6 @@ The tool supports up to 15 years back.
                 ].copy()
                 if not dom.empty:
                     st.markdown("**Dormant account inactivity distribution**")
-                    # Bucket into ranges
                     def bucket(d):
                         if d <= 180:  return "91–180 days"
                         if d <= 365:  return "181–365 days"
@@ -921,30 +862,171 @@ The tool supports up to 15 years back.
                             x=buckets["Inactivity range"].tolist(),
                             y=buckets["Count"].tolist(),
                             marker_color=["#F9CB42","#EF9F27","#E24B4A","#A32D2D"],
-                            text=buckets["Count"].tolist(),
-                            textposition="outside",
+                            text=buckets["Count"].tolist(), textposition="outside",
                         )])
                         fig3.update_layout(
                             height=300, margin=dict(t=30,b=40,l=40,r=20),
-                            paper_bgcolor="rgba(0,0,0,0)",
-                            plot_bgcolor="rgba(0,0,0,0)",
+                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                             font=dict(family="Arial",color="#404040"),
-                            yaxis=dict(gridcolor="rgba(0,0,0,0.05)"),
-                            showlegend=False,
+                            yaxis=dict(gridcolor="rgba(0,0,0,0.05)"), showlegend=False,
                         )
                         st.plotly_chart(fig3, use_container_width=True)
                     except ImportError:
                         st.bar_chart(buckets.set_index("Inactivity range"))
 
+    # ── Tab 5: Identity Risk Register ─────────────────────────────────────────
     with tab5:
+        st.markdown("### 🎯 Identity Risk Register")
+        st.caption(
+            "One row per identity. Ranked by composite Identity Risk Score (0–100). "
+            "Score combines severity weight (40%), critical flag (25%), dormancy (15%), "
+            "privilege breadth (12%), and contractor risk (8%)."
+        )
+
+        if risk_register is not None and not risk_register.empty:
+            # ── Band filter ───────────────────────────────────────────────────
+            band_opts = ["All"] + [b for b in ["CRITICAL","HIGH","MEDIUM","LOW"]
+                                   if b in risk_register["Risk_Band"].values]
+            rb1, rb2 = st.columns([2,3])
+            with rb1:
+                band_filter = st.selectbox("Filter by risk band", band_opts, key="rr_band_filter")
+            with rb2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                rr_c = risk_register["Risk_Band"].value_counts()
+                parts = []
+                for b, ico in [("CRITICAL","🔴"),("HIGH","🟠"),("MEDIUM","🟡"),("LOW","🟢")]:
+                    if b in rr_c:
+                        parts.append(f"{ico} {b}: **{rr_c[b]}**")
+                st.markdown(" · ".join(parts))
+
+            rr_display = risk_register if band_filter == "All" else risk_register[risk_register["Risk_Band"] == band_filter]
+
+            # ── Styled dataframe ──────────────────────────────────────────────
+            def _colour_band(val):
+                colours = {"CRITICAL":"#FFDEDE","HIGH":"#FFF0CC","MEDIUM":"#FFFBCC","LOW":"#DFFFEA"}
+                return f"background-color: {colours.get(val,'')}"
+
+            def _colour_score(val):
+                try:
+                    v = int(val)
+                    if v >= 75: return "background-color:#FFDEDE;font-weight:bold"
+                    if v >= 50: return "background-color:#FFF0CC"
+                    if v >= 25: return "background-color:#FFFBCC"
+                    return "background-color:#DFFFEA"
+                except Exception:
+                    return ""
+
+            display_cols = [c for c in [
+                "Rank","Identity","Risk_Score","Risk_Band","Finding_Count",
+                "Critical_Findings","High_Findings","Medium_Findings","Checks_Triggered",
+            ] if c in rr_display.columns]
+
+            try:
+                styled = (
+                    rr_display[display_cols]
+                    .style
+                    .applymap(_colour_band, subset=["Risk_Band"])
+                    .applymap(_colour_score, subset=["Risk_Score"])
+                )
+                st.dataframe(
+                    styled,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(60 + len(rr_display) * 35, 520),
+                    column_config={
+                        "Rank":             st.column_config.NumberColumn("Rank",       width="small"),
+                        "Identity":         st.column_config.TextColumn("Identity",     width="medium"),
+                        "Risk_Score":       st.column_config.NumberColumn("IRS",        width="small",
+                                                help="Identity Risk Score 0–100"),
+                        "Risk_Band":        st.column_config.TextColumn("Band",         width="small"),
+                        "Finding_Count":    st.column_config.NumberColumn("Findings",   width="small"),
+                        "Critical_Findings":st.column_config.NumberColumn("🔴 Crit",   width="small"),
+                        "High_Findings":    st.column_config.NumberColumn("🟠 High",   width="small"),
+                        "Medium_Findings":  st.column_config.NumberColumn("🟡 Med",    width="small"),
+                        "Checks_Triggered": st.column_config.TextColumn("Checks",       width="large"),
+                    }
+                )
+            except Exception:
+                # matplotlib not available or styling fails — render unstyled
+                st.dataframe(
+                    rr_display[display_cols],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(60 + len(rr_display) * 35, 520),
+                )
+
+            # ── IRS score distribution chart ──────────────────────────────────
+            if "Risk_Score" in risk_register.columns:
+                st.divider()
+                st.markdown("**IRS score distribution across population**")
+                bins = [0,25,50,75,100]
+                labels = ["Low (0–24)","Medium (25–49)","High (50–74)","Critical (75–100)"]
+                score_series = pd.to_numeric(risk_register["Risk_Score"], errors="coerce").dropna()
+                counts = pd.cut(score_series, bins=bins, labels=labels, include_lowest=True).value_counts().reindex(labels, fill_value=0)
+                hist_df = pd.DataFrame({"Band": counts.index, "Identities": counts.values})
+                try:
+                    import plotly.graph_objects as go
+                    fig_irs = go.Figure(data=[go.Bar(
+                        x=hist_df["Band"].tolist(),
+                        y=hist_df["Identities"].tolist(),
+                        marker_color=["#DFFFEA","#FFFBCC","#FFF0CC","#FFDEDE"],
+                        text=hist_df["Identities"].tolist(),
+                        textposition="outside",
+                    )])
+                    fig_irs.update_layout(
+                        height=280, margin=dict(t=20,b=40,l=40,r=20),
+                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(family="Arial",color="#404040"),
+                        yaxis=dict(gridcolor="rgba(0,0,0,0.05)",title="Identities"),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig_irs, use_container_width=True)
+                except ImportError:
+                    st.bar_chart(hist_df.set_index("Band"))
+
+            # ── Component score breakdown ─────────────────────────────────────
+            comp_cols = [c for c in [
+                "IRS_Severity","IRS_Critical_Flag","IRS_Dormancy","IRS_Privilege","IRS_Contractor"
+            ] if c in risk_register.columns]
+            if comp_cols:
+                st.divider()
+                st.markdown("**Component score breakdown — population averages**")
+                comp_means = risk_register[comp_cols].mean().round(3)
+                comp_labels = {
+                    "IRS_Severity":     "Severity weight (40%)",
+                    "IRS_Critical_Flag":"Critical flag (25%)",
+                    "IRS_Dormancy":     "Dormancy (15%)",
+                    "IRS_Privilege":    "Privilege breadth (12%)",
+                    "IRS_Contractor":   "Contractor risk (8%)",
+                }
+                comp_df = pd.DataFrame({
+                    "Component": [comp_labels.get(c,c) for c in comp_cols],
+                    "Avg raw score (0–1)": [comp_means[c] for c in comp_cols],
+                })
+                st.dataframe(comp_df, use_container_width=True, hide_index=True, height=220)
+
+            # ── Export risk register ──────────────────────────────────────────
+            st.divider()
+            rr_buf = io.BytesIO()
+            risk_register.to_excel(rr_buf, index=False)
+            rr_buf.seek(0)
+            ref_slug = (meta.get("ref") or "Audit").replace(" ","_").replace("/","-")
+            st.download_button(
+                label="📥 Download Identity Risk Register (.xlsx)",
+                data=rr_buf.getvalue(),
+                file_name=f"IRS_Register_{ref_slug}_{datetime.today().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+            )
+        else:
+            st.info("No risk register data. Run the audit to generate IRS scores.")
+
+    # ── Tab 6: Opinion ────────────────────────────────────────────────────────
+    with tab6:
         st.markdown("#### Audit opinion")
         oc1, oc2 = st.columns([2,1])
         with oc2:
-            use_ai = st.checkbox(
-                "Use AI to generate opinion",
-                value=True,
-                help="Uses AI to write a professional 3-section audit memo. Falls back to rule-based if unavailable."
-            )
+            use_ai = st.checkbox("Use AI to generate opinion", value=True)
         with oc1:
             if use_ai:
                 st.caption("AI will write a professional audit memo with Executive Summary, Key Findings, and Formal Opinion.")
@@ -961,27 +1043,27 @@ The tool supports up to 15 years back.
                     st.session_state["ai_opinion"] = ai_opinion
                 else:
                     st.warning("AI opinion unavailable — showing rule-based opinion instead.")
-                    st.session_state["ai_opinion"] = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
-
+                    st.session_state["ai_opinion"] = generate_opinion(
+                        findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n
+                    )
             if "ai_opinion" in st.session_state:
                 st.markdown("---")
                 st.markdown(st.session_state["ai_opinion"])
                 st.markdown("---")
-                st.caption("⚠️ AI-generated content. Review and edit before any formal use. The responsible auditor must approve this opinion.")
+                st.caption("⚠️ AI-generated content. Review and edit before any formal use.")
         else:
             opinion = generate_opinion(findings_df, meta, SCOPE_START, SCOPE_END, len(sys_df_f), in_scope_n)
-            edited_opinion = st.text_area("Draft opinion (edit before use):",
-                                          value=opinion, height=440, label_visibility="visible")
-            st.caption("This draft is generated from finding counts and severity. It must be reviewed and approved before formal use.")
+            st.text_area("Draft opinion (edit before use):", value=opinion, height=440)
+            st.caption("This draft is generated from finding counts and severity. Must be reviewed before formal use.")
         if doc_files:
-            st.caption(f"Documents uploaded: {', '.join(f.name for f,_ in doc_files)}. Reference these in your final opinion.")
+            st.caption(f"Documents uploaded: {', '.join(f.name for f,_ in doc_files)}.")
 
-    with tab6:
+    # ── Tab 7: Audit Sample ───────────────────────────────────────────────────
+    with tab7:
         st.markdown("#### Audit sample — 25 items for external auditors")
         st.caption(
             "External auditors always request a manual sample even after a full population test. "
-            "This generates a prioritised 25-item sample: Critical first, then High, then random Medium. "
-            "Each row includes a test instruction and evidence checklist for the external team."
+            "This generates a prioritised 25-item sample: Critical first, then High, then random Medium."
         )
         ss1, ss2 = st.columns([1,3])
         with ss1:
@@ -1010,7 +1092,6 @@ The tool supports up to 15 years back.
                     "TestInstruction":st.column_config.TextColumn("Test instruction", width="large"),
                 })
 
-            # Export sample to Excel
             buf_s = io.BytesIO()
             with pd.ExcelWriter(buf_s, engine="xlsxwriter") as wr:
                 wb_s = wr.book
@@ -1028,11 +1109,11 @@ The tool supports up to 15 years back.
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary", use_container_width=True,
             )
-            st.caption("Hand this file to the external audit team. Each row has a test instruction, evidence requirement, and columns for their testing notes.")
+            st.caption("Hand this file to the external audit team.")
         else:
             st.info("No findings to sample.")
 
-    # ── EXPORT ───────────────────────────────────────────────────────────────
+    # ── EXPORT ────────────────────────────────────────────────────────────────
     st.divider()
     ex1,ex2 = st.columns([3,1])
     with ex1:
@@ -1047,7 +1128,7 @@ The tool supports up to 15 years back.
             type="primary", use_container_width=True,
         )
     with ex2:
-        st.metric("Report sheets", "8+")
+        st.metric("Report sheets", "9+")
 
 elif uploaded_files and (not hr_file or not sys_file):
     if not hr_file:
@@ -1056,7 +1137,6 @@ elif uploaded_files and (not hr_file or not sys_file):
         st.warning("⚠️ System Access file not identified. Rename your file to include `System_Access` or use the manual selector above.")
 
 else:
-    # ── UPLOAD PROMPT ─────────────────────────────────────────────────────────
     st.info(
         "📂 Upload your HR Master and System Access files above to begin the audit. "
         "You can also add your SOA, RBAC Matrix, Privileged User Registry and policy documents "
