@@ -4,7 +4,7 @@ import pandas as pd
 from thefuzz import fuzz
 import io, json, base64, re, random
 from datetime import datetime, date, timedelta
-import identity_risk  # Points to identity_risk.py
+import identity_risk  # Ensure identity_risk.py exists in the same folder
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  POLICY CONSTANTS
@@ -51,7 +51,7 @@ SOD_RULES = []
 
 def run_audit(hr_df, sys_df, start_date, end_date, dormant, expiry, fuzzy, max_sys, frameworks):
     """Main audit execution logic."""
-    # Simplified logic to ensure app runs
+    # Placeholder: ensures findings_df has necessary columns for the identity_risk module
     findings = pd.DataFrame(columns=["Severity", "IssueType", "Email", "Department", "Issue"])
     return findings, 0, []
 
@@ -104,25 +104,32 @@ def run_registry_checks(sys, registry):
 def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end, excluded_count, meta, opinion_text):
     output = io.BytesIO()
     
-    # Update findings with Identity Risk Scores
+    # 1. Update findings with Identity Risk Scores
     if not findings_df.empty:
         findings_df = identity_risk.compute_irs(findings_df, scope_end)
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Dummy data for mandatory sheets to prevent export errors
         findings_df.to_excel(writer, sheet_name="Findings", index=False)
         
-        # SHEET 10: IDENTITY RISK REGISTER
+        # 2. Build the specialized Risk Register sheet
         risk_register = identity_risk.build_risk_register(findings_df)
+        
         if not risk_register.empty:
             risk_register.to_excel(writer, sheet_name="10. Identity Risk Register", index=False)
             
             workbook  = writer.book
+            worksheet = writer.sheets["10. Identity Risk Register"]
+            
+            # Formatting definitions
             red_fmt = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
             yellow_fmt = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C5700'})
             
-            worksheet = writer.sheets["10. Identity Risk Register"]
-            worksheet.conditional_format('D2:D5000', {'type': 'cell', 'criteria': 'equal to', 'value': '"CRITICAL"', 'format': red_fmt})
-            worksheet.conditional_format('D2:D5000', {'type': 'cell', 'criteria': 'equal to', 'value': '"HIGH"', 'format': yellow_fmt})
+            # Conditional formatting on Risk_Band column
+            worksheet.conditional_format('D2:D5000', {
+                'type': 'cell', 'criteria': 'equal to', 'value': '"CRITICAL"', 'format': red_fmt
+            })
+            worksheet.conditional_format('D2:D5000', {
+                'type': 'cell', 'criteria': 'equal to', 'value': '"HIGH"', 'format': yellow_fmt
+            })
 
     return output.getvalue()
