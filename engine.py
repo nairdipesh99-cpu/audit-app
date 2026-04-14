@@ -4,7 +4,7 @@ import pandas as pd
 from thefuzz import fuzz
 import io, json, base64, re, random
 from datetime import datetime, date, timedelta
-import irs  # <--- ADDED FOR IDENTITY RISK SCORING
+import irs  # Handles the Identity Risk Scoring logic
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  POLICY CONSTANTS  (sidebar overrides these at runtime)
@@ -494,32 +494,33 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end, excluded_
     """
     output = io.BytesIO()
     
-    # CALCULATE RISK SCORES BEFORE WRITING EXCEL
-    # Ensure findings_df has scores appended via the irs engine
+    # 1. COMPUTE SCORES: Use irs.py to calculate risk scores before export
+    # This attaches identity_risk_score and risk_band to the findings_df
     findings_df = irs.compute_irs(findings_df, scope_end)
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # --- (Sheets 1 to 9 logic would be here) ---
-        # Mocking existence of other sheets for this snippet's structural integrity
-        pd.DataFrame([["Workpaper Placeholder"]]).to_excel(writer, sheet_name="1. Cover", index=False)
-
+        # Note: You will need to add your logic for Sheets 1-9 back here.
+        # This snippet ensures Sheet 10 is correctly generated.
+        
         # ─────────────────────────────────────────────────────────────────
         # NEW: SHEET 10 - IDENTITY RISK REGISTER
         # ─────────────────────────────────────────────────────────────────
+        # 2. BUILD REGISTER: Get the ranked dataframe for Sheet 10
         risk_register = irs.build_risk_register(findings_df)
         
         if not risk_register.empty:
+            # Write to Excel
             risk_register.to_excel(writer, sheet_name="10. Identity Risk Register", index=False)
             
-            # Formating Sheet 10
+            # 3. FORMATTING: Apply risk band highlighting
             workbook  = writer.book
             worksheet = writer.sheets["10. Identity Risk Register"]
             
-            # Setup colors
+            # Setup colors based on risk bands
             fmt_critical = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
             fmt_high     = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C5700'})
             
-            # Apply color to the Risk_Band column
+            # Apply formatting to the Risk_Band column (D)
             worksheet.conditional_format(1, 3, len(risk_register), 3, {
                 'type':     'cell',
                 'criteria': 'equal to',
