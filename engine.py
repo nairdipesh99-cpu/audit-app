@@ -4,18 +4,19 @@ import pandas as pd
 from thefuzz import fuzz
 import io, json, base64, re, random
 from datetime import datetime, date, timedelta
-import irs  # This requires irs.py to be in the same folder as this file
+import identity_risk  # <--- CRITICAL: Points to your identity_risk.py file
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  POLICY CONSTANTS
+#  POLICY CONSTANTS  (sidebar overrides these at runtime)
 # ─────────────────────────────────────────────────────────────────────────────
 DORMANT_DAYS         = 90
 PASSWORD_EXPIRY_DAYS = 90
 FUZZY_THRESHOLD      = 88
 MAX_SYSTEMS          = 3
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-#  SEMANTIC INTELLIGENCE — Department Synonyms
+#  SEMANTIC INTELLIGENCE — department and access level normalisation
 # ─────────────────────────────────────────────────────────────────────────────
 
 DEPT_SYNONYMS = {
@@ -415,7 +416,7 @@ DEPT_SYNONYMS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  ACCESS LEVEL SYNONYMS
+#  ACCESS LEVEL SYNONYMS — maps every known variation to canonical form
 # ─────────────────────────────────────────────────────────────────────────────
 
 ACCESS_SYNONYMS = {
@@ -485,23 +486,26 @@ ACCESS_SYNONYMS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  EXCEL GENERATION
+#  EXCEL GENERATION LOGIC
 # ─────────────────────────────────────────────────────────────────────────────
 
 def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end, excluded_count, meta, opinion_text):
-    """Generates the Excel download with all findings and the Risk Register."""
+    """
+    Generates the Excel download. Full logic including Sheet 10.
+    """
     output = io.BytesIO()
     
-    # Calculate scores before building sheets
-    findings_df = irs.compute_irs(findings_df, scope_end)
+    # 1. Update findings with Identity Risk Scores before writing sheets
+    findings_df = identity_risk.compute_irs(findings_df, scope_end)
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Note: In your actual tool, you will have Sheet 1 through 9 logic here.
+        # Note: Your existing Sheet 1 through 9 logic should be here.
+        # This code provides the structure to ensure Sheet 10 is generated correctly.
         
         # ─────────────────────────────────────────────────────────────────
         # SHEET 10: IDENTITY RISK REGISTER
         # ─────────────────────────────────────────────────────────────────
-        risk_register = irs.build_risk_register(findings_df)
+        risk_register = identity_risk.build_risk_register(findings_df)
         
         if not risk_register.empty:
             risk_register.to_excel(writer, sheet_name="10. Identity Risk Register", index=False)
@@ -509,16 +513,22 @@ def to_excel_bytes(findings_df, hr_df, sys_df, scope_start, scope_end, excluded_
             workbook  = writer.book
             worksheet = writer.sheets["10. Identity Risk Register"]
             
-            # Formats
+            # Setup colors for highlighting
             red_fmt = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006'})
             yellow_fmt = workbook.add_format({'bg_color': '#FFEB9C', 'font_color': '#9C5700'})
             
-            # Apply to Risk_Band column
+            # Apply color to the Risk_Band column
             worksheet.conditional_format('D2:D5000', {
-                'type': 'cell', 'criteria': 'equal to', 'value': '"CRITICAL"', 'format': red_fmt
+                'type': 'cell',
+                'criteria': 'equal to',
+                'value': '"CRITICAL"',
+                'format': red_fmt
             })
             worksheet.conditional_format('D2:D5000', {
-                'type': 'cell', 'criteria': 'equal to', 'value': '"HIGH"', 'format': yellow_fmt
+                'type': 'cell',
+                'criteria': 'equal to',
+                'value': '"HIGH"',
+                'format': yellow_fmt
             })
 
     return output.getvalue()
