@@ -1,6 +1,5 @@
-
 """
-irs.py — Identity Risk Score (IRS) Engine
+identity_risk.py — Identity Risk Score (IRS) Engine
 Project 80 | Phase 1
 Computes a 0–100 composite risk score per identity from run_audit() findings_df.
 No additional data inputs required.
