@@ -13,12 +13,12 @@ from engine import (
     run_rbac_checks, run_registry_checks,
     sev_order, SOD_RULES,
 )
-# NEW: Import Identity Risk Score engine
-import irs 
+# UPDATED: Points to identity_risk.py
+import identity_risk 
 from components import inject_css, render_header, render_sidebar_brand, led_status_bar, led_dot, stat_card
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  SESSION STATE
+# SESSION STATE
 # ─────────────────────────────────────────────────────────────────────────────
 today = date.today()
 _default_year = today.year - 1
@@ -50,7 +50,7 @@ def _set_year():
     st.session_state.update(ss_start=date(y,1,1),ss_end=date(y,12,31),locked=False)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  SIDEBAR
+# SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     render_sidebar_brand()
@@ -110,7 +110,7 @@ with st.sidebar:
     MAX_SYSTEMS          = st.slider("Max systems per user",    2,   10,  3)
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HEADER + UPLOAD
+# HEADER + UPLOAD
 # ─────────────────────────────────────────────────────────────────────────────
 render_header()
 
@@ -120,9 +120,6 @@ uploaded_files = st.file_uploader("Drop documents here", type=["xlsx","xls","csv
 hr_file  = None
 sys_file = None
 doc_files = []
-soa_sod_extra = {}
-rbac_matrix_data = {}
-registry_df_data = None
 
 if uploaded_files:
     classified = {f.name: detect_doc_type(f) for f in uploaded_files}
@@ -133,7 +130,7 @@ if uploaded_files:
         else: doc_files.append((f, dtype))
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  AUDIT EXECUTION
+# AUDIT EXECUTION
 # ─────────────────────────────────────────────────────────────────────────────
 if hr_file and sys_file:
     hr_df  = pd.read_excel(hr_file) if not hr_file.name.endswith(".csv") else pd.read_csv(hr_file)
@@ -143,22 +140,18 @@ if hr_file and sys_file:
         st.info("Files loaded. Click GO in the sidebar to run audit.")
         st.stop()
 
-    # Engine Execution
     with st.spinner("🔍 Scanning identities..."):
         findings_df, excluded_count, _col_warnings = run_audit(
             hr_df, sys_df, SCOPE_START, SCOPE_END,
             DORMANT_DAYS, PASSWORD_EXPIRY_DAYS, FUZZY_THRESHOLD, MAX_SYSTEMS, selected_fw
         )
         
-        # NEW: Compute Identity Risk Scores (Phase 1)
-        findings_df = irs.compute_irs(findings_df, SCOPE_END)
-        risk_register = irs.build_risk_register(findings_df)
-        irs_stats = irs.irs_summary_stats(risk_register)
+        # UPDATED: Using identity_risk instead of irs
+        findings_df = identity_risk.compute_irs(findings_df, SCOPE_END)
+        risk_register = identity_risk.build_risk_register(findings_df)
+        irs_stats = identity_risk.irs_summary_stats(risk_register)
 
-    # ── RESULTS DASHBOARD ─────────────────────────────────────────────────────
     st.markdown("### 📊 Audit intelligence")
-    
-    # Row 1: High Level Counts
     m = st.columns(5)
     m[0].metric("Total findings", len(findings_df))
     m[1].metric("🔴 Critical", len(findings_df[findings_df["Severity"].str.contains("CRITICAL", na=False)]))
@@ -168,28 +161,20 @@ if hr_file and sys_file:
 
     st.divider()
 
-    # ── TABS ─────────────────────────────────────────────────────────────────
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🔎 Findings", "🛡️ Risk Register", "⚖️ Frameworks", "📈 Analysis", "✍️ Opinion", "🎯 Audit Sample"
     ])
 
     with tab1:
-        st.dataframe(findings_df[["Severity", "IssueType", "Email", "Department", "identity_risk_score"]], use_container_width=True)
+        st.dataframe(findings_df, use_container_width=True)
 
     with tab2:
         st.markdown("### 🛡️ Identity Risk Register")
-        st.caption("This register ranks every identity found in the audit by their composite risk score (0-100).")
-        
-        # Display Risk Register with Color Coding
         st.dataframe(
             risk_register.style.background_gradient(subset=["Risk_Score"], cmap="YlOrRd"),
             use_container_width=True,
             hide_index=True
         )
-        
-        # Download specialized Risk Register
-        csv = risk_register.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Risk Register (CSV)", data=csv, file_name="Identity_Risk_Register.csv", mime="text/csv")
 
     with tab5:
         st.markdown("### ✍️ AI Audit Opinion")
@@ -198,24 +183,19 @@ if hr_file and sys_file:
             st.write(opinion)
             st.session_state["opinion_cache"] = opinion
 
-    # ── FINAL EXPORT ──────────────────────────────────────────────────────────
     st.divider()
     if st.button("📦 Generate Final Audit Workpaper (9+ Sheets)"):
         opinion = st.session_state.get("opinion_cache", "AI Opinion not generated.")
-        
-        # The to_excel_bytes in engine.py should be updated to handle the extra sheet
         xlsx_data = to_excel_bytes(
             findings_df, hr_df, sys_df, 
             SCOPE_START, SCOPE_END, excluded_count, 
             meta, opinion
         )
-        
         st.download_button(
             label="📥 Download Workpaper-Ready Excel",
             data=xlsx_data,
             file_name=f"Audit_Report_{meta['client']}_{SCOPE_END.year}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
 else:
     st.info("Please upload your HR Master and System Access files to begin.")
