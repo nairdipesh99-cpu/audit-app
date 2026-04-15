@@ -2533,8 +2533,7 @@ def parse_soa_sod_rules(soa_text):
     dept_keywords = ["Finance","IT","HR","Sales","Marketing","Operations","Procurement","Legal","Risk","Support"]
     access_keywords = ["Admin","Finance","Payroll","DBAdmin","HR","SysAdmin","FullControl","SuperAdmin","Root"]
     for dept in dept_keywords:
-        _access_pattern = "|".join(access_keywords)
-        pattern = rf"{dept}[^.\n]{{0,60}}({_access_pattern})"
+        pattern = rf"{dept}[^.\n]{{0,60}}({"|".join(access_keywords)})"
         matches = re.findall(pattern, soa_text, re.IGNORECASE)
         if matches:
             rules[dept] = list(set(matches))
