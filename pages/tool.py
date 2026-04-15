@@ -345,13 +345,18 @@ not a sample or extract pre-filtered by the client.
             st.rerun()
         st.stop()
 
-    _cache_key = (
-        getattr(hr_file,  "name","") + str(len(hr_df_f)) +
-        getattr(sys_file, "name","") + str(len(sys_df_f)) +
-        str(SCOPE_START) + str(SCOPE_END) +
-        str(DORMANT_DAYS) + str(PASSWORD_EXPIRY_DAYS) +
-        str(FUZZY_THRESHOLD) + str(MAX_SYSTEMS) + str(selected_fw)
-    )
+   elif dtype in ("soa","access_policy","sod_matrix","other"):
+                    if f.name.lower().endswith((".xlsx",".xls")):
+                        f.seek(0)
+                        _sod_result = load_sod_matrix(f)
+                        matrix_rules = _sod_result if isinstance(_sod_result, dict) else (_sod_result[0] if isinstance(_sod_result, tuple) else {})
+                        if matrix_rules:
+                            st.caption(f"Loaded {len(matrix_rules)} SoD rules from Excel matrix.")
+                            soa_sod_extra.update(matrix_rules)
+                    extra = parse_soa_sod_rules(text)
+                    if extra:
+                        st.caption(f"Extracted {len(extra)} SoD rules from document text.")
+                        soa_sod_extra.update(extra)
 
     if (st.session_state.get("findings_cache") is None or
             st.session_state.get("_last_cache_key") != _cache_key):
