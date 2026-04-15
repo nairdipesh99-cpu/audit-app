@@ -15,6 +15,7 @@ from engine import (
 )
 from components import inject_css, render_header, render_sidebar_brand, led_status_bar, led_dot
 from irs import compute_irs, build_risk_register, irs_summary_stats
+from alerts import send_post_termination_alerts
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  SESSION STATE
@@ -119,7 +120,8 @@ def parse_soa_sod_rules(soa_text):
     dept_keywords   = ["Finance","IT","HR","Sales","Marketing","Operations","Procurement","Legal","Risk","Support"]
     access_keywords = ["Admin","Finance","Payroll","DBAdmin","HR","SysAdmin","FullControl","SuperAdmin","Root"]
     for dept in dept_keywords:
-        pattern = rf"{dept}[^.\n]{{0,60}}({'|'.join(access_keywords)})"
+        _access_pattern = "|".join(access_keywords)
+        pattern         = rf"{dept}[^.\n]{{0,60}}({_access_pattern})"
         matches = re.findall(pattern, soa_text, re.IGNORECASE)
         if matches:
             rules[dept] = list(set(matches))
@@ -348,7 +350,11 @@ if doc_files:
                 elif dtype in ("soa","access_policy","sod_matrix","other"):
                     if f.name.lower().endswith((".xlsx",".xls")):
                         f.seek(0)
-                        matrix_rules, matrix_err = load_sod_matrix(f)
+                        _raw_sod = load_sod_matrix(f)
+                        matrix_rules = _raw_sod if isinstance(_raw_sod, dict) else (
+                            _raw_sod[0] if isinstance(_raw_sod, tuple) and len(_raw_sod) > 0
+                            and isinstance(_raw_sod[0], dict) else {}
+                        )
                         if matrix_rules:
                             st.caption(f"Loaded {len(matrix_rules)} SoD rules from Excel matrix.")
                             soa_sod_extra.update(matrix_rules)
@@ -560,6 +566,66 @@ not a sample or extract pre-filtered by the client.
         )
         st.stop()
 
+    # ── POST-TERMINATION ALERT PANEL ─────────────────────────────────────────
+    _pt_count = cnt("IssueType", "Post-Termination Login")
+    if _pt_count > 0:
+        st.divider()
+        st.markdown("### 🚨 Post-Termination Login Alert")
+        with st.expander(
+            f"⚠️ {_pt_count} post-termination login(s) detected — configure alerts to notify CISO",
+            expanded=True,
+        ):
+            st.caption(
+                "An ex-employee has accessed systems after their termination date. "
+                "This is a potential data breach. GDPR Art.33 requires notification within 72 hours of discovery."
+            )
+            al1, al2 = st.columns(2)
+            with al1:
+                st.markdown("**Slack**")
+                slack_url = st.text_input(
+                    "Slack Webhook URL",
+                    placeholder="https://hooks.slack.com/services/...",
+                    key="alert_slack_url",
+                    type="password",
+                )
+                st.caption("Create a webhook at: Slack → Apps → Incoming Webhooks")
+            with al2:
+                st.markdown("**Email**")
+                email_on = st.checkbox("Enable email alert", key="alert_email_on")
+                recipients_raw = st.text_input(
+                    "Recipients (comma-separated)",
+                    placeholder="ciso@company.com, security@company.com",
+                    key="alert_recipients",
+                )
+                smtp_host = st.text_input("SMTP Host", value="smtp.gmail.com", key="alert_smtp_host")
+                smtp_user = st.text_input("SMTP Username / From address", key="alert_smtp_user")
+                smtp_pass = st.text_input(
+                    "SMTP Password / App Password",
+                    key="alert_smtp_pass",
+                    type="password",
+                    help="For Gmail: use an App Password, not your account password.",
+                )
+
+            if st.button("🚨 Send Alert Now", type="primary", use_container_width=True, key="send_alert_btn"):
+                _alert_config = {
+                    "slack_webhook_url": slack_url,
+                    "email_enabled":     email_on,
+                    "smtp_host":         smtp_host,
+                    "smtp_port":         587,
+                    "smtp_user":         smtp_user,
+                    "smtp_password":     smtp_pass,
+                    "alert_recipients":  [r.strip() for r in recipients_raw.split(",") if r.strip()],
+                    "client_name":       meta.get("client", "Unknown Client"),
+                    "audit_ref":         meta.get("ref", "N/A"),
+                }
+                with st.spinner("Sending alerts..."):
+                    alert_results = send_post_termination_alerts(findings_df, _alert_config)
+                for r in alert_results:
+                    if r["success"]:
+                        st.success(f"✅ {r['channel'].title()}: {r['message']}")
+                    else:
+                        st.error(f"❌ {r['channel'].title()}: {r['message']}")
+
     st.divider()
 
     # ── TABS ─────────────────────────────────────────────────────────────────
@@ -596,7 +662,6 @@ not a sample or extract pre-filtered by the client.
 
         st.caption(f"Showing {len(filtered):,} of {total:,} findings — click any row to expand details")
 
-        # ── Summary table — includes IRS columns if present ───────────────────
         base_cols = ["Severity","IssueType","Email","FullName","Department","AccessLevel"]
         irs_display_cols = ["identity_risk_score","risk_band"]
         summary_cols = [c for c in base_cols + irs_display_cols if c in filtered.columns]
@@ -628,7 +693,6 @@ not a sample or extract pre-filtered by the client.
                 hide_index=True,
             )
 
-        # ── Expandable detail ─────────────────────────────────────────────────
         st.markdown("#### Finding details")
         st.caption("Expand any finding to see the full detail, risk statement and remediation steps.")
 
@@ -884,7 +948,6 @@ not a sample or extract pre-filtered by the client.
         )
 
         if risk_register is not None and not risk_register.empty:
-            # ── Band filter ───────────────────────────────────────────────────
             band_opts = ["All"] + [b for b in ["CRITICAL","HIGH","MEDIUM","LOW"]
                                    if b in risk_register["Risk_Band"].values]
             rb1, rb2 = st.columns([2,3])
@@ -901,7 +964,6 @@ not a sample or extract pre-filtered by the client.
 
             rr_display = risk_register if band_filter == "All" else risk_register[risk_register["Risk_Band"] == band_filter]
 
-            # ── Styled dataframe ──────────────────────────────────────────────
             def _colour_band(val):
                 colours = {"CRITICAL":"#FFDEDE","HIGH":"#FFF0CC","MEDIUM":"#FFFBCC","LOW":"#DFFFEA"}
                 return f"background-color: {colours.get(val,'')}"
@@ -947,7 +1009,6 @@ not a sample or extract pre-filtered by the client.
                     }
                 )
             except Exception:
-                # matplotlib not available or styling fails — render unstyled
                 st.dataframe(
                     rr_display[display_cols],
                     use_container_width=True,
@@ -955,7 +1016,6 @@ not a sample or extract pre-filtered by the client.
                     height=min(60 + len(rr_display) * 35, 520),
                 )
 
-            # ── IRS score distribution chart ──────────────────────────────────
             if "Risk_Score" in risk_register.columns:
                 st.divider()
                 st.markdown("**IRS score distribution across population**")
@@ -984,7 +1044,6 @@ not a sample or extract pre-filtered by the client.
                 except ImportError:
                     st.bar_chart(hist_df.set_index("Band"))
 
-            # ── Component score breakdown ─────────────────────────────────────
             comp_cols = [c for c in [
                 "IRS_Severity","IRS_Critical_Flag","IRS_Dormancy","IRS_Privilege","IRS_Contractor"
             ] if c in risk_register.columns]
@@ -1005,7 +1064,6 @@ not a sample or extract pre-filtered by the client.
                 })
                 st.dataframe(comp_df, use_container_width=True, hide_index=True, height=220)
 
-            # ── Export risk register ──────────────────────────────────────────
             st.divider()
             rr_buf = io.BytesIO()
             risk_register.to_excel(rr_buf, index=False)
@@ -1146,4 +1204,3 @@ else:
         "New here? Visit the **How to Use** page in the sidebar for a full step-by-step walkthrough, "
         "column reference and document naming guide."
     )
-
