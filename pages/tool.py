@@ -158,200 +158,121 @@ with st.sidebar:
     if c2.checkbox("PCI-DSS",   value=False): selected_fw.append("PCI-DSS")
 
     st.divider()
-    st.markdown("#### Audit scope")
-    _yr_opts = list(range(today.year, today.year - 16, -1))
-
-    def _fmt_year(y):
-        if y == today.year:     return f"{y}  — current year"
-        if y == today.year - 1: return f"{y}  — previous year"
-        if y == today.year - 2: return f"{y}  — 2 years ago"
-        return f"{y}  — {today.year - y} years ago"
-
-    st.selectbox(
-        "Audit year",
-        options=_yr_opts,
-        index=1,
-        format_func=_fmt_year,
-        key="audit_year_sel",
-        help="Select any year from the last 15 years.",
-    )
-    sb1, sb2 = st.columns(2)
-    sb1.button("Full Year",    use_container_width=True, on_click=_set_year, type="primary")
-    sb2.button("Last Quarter", use_container_width=True, on_click=_last_q)
-    sb1.button("Last 6 Mo.",   use_container_width=True, on_click=_last_6)
-    sb2.button("This Month",   use_container_width=True, on_click=_this_month)
-
-    st.caption("Or set a custom date range below for multi-year or specific period audits.")
-    dc1, dc2 = st.columns(2)
-    with dc1:
-        st.date_input("From", key="ss_start", on_change=_date_chg,
-                      min_value=date(today.year - 15, 1, 1), max_value=today)
-    with dc2:
-        st.date_input("To",   key="ss_end",   on_change=_date_chg,
-                      min_value=date(today.year - 15, 1, 2), max_value=today)
-
-    date_err = st.session_state["ss_start"] >= st.session_state["ss_end"]
-    if date_err: st.error("From must be before To.")
-    st.button("▶  GO — Run Audit", use_container_width=True, type="primary",
-              disabled=date_err, on_click=_go)
-
-    SCOPE_START = st.session_state["ss_start"]
-    SCOPE_END   = st.session_state["ss_end"]
-    scope_days  = (SCOPE_END - SCOPE_START).days
-    if st.session_state["locked"]:
-        st.success(f"🔒 {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')} ({scope_days}d)")
-    else:
-        st.info(f"📅 {scope_days} days — click GO to run")
+    st.markdown("#### Audit parameters")
+    DORMANT_DAYS         = st.slider("Dormant threshold (days)",    30, 365, 90, 10)
+    PASSWORD_EXPIRY_DAYS = st.slider("Password expiry (days)",      30, 365, 90, 10)
+    FUZZY_THRESHOLD      = st.slider("Fuzzy match threshold",       70, 100, 88,  1)
+    MAX_SYSTEMS          = st.slider("Max systems per user",         1,  10,  3,  1)
 
     st.divider()
-    st.markdown("#### Detection thresholds")
-    DORMANT_DAYS         = st.slider("Dormant (days)",         30, 365, 90)
-    PASSWORD_EXPIRY_DAYS = st.slider("Password expiry (days)", 30, 365, 90)
-    FUZZY_THRESHOLD      = st.slider("Fuzzy match %",          70,  99, 88)
-    MAX_SYSTEMS          = st.slider("Max systems per user",    2,   10,  3)
+    st.markdown("#### Audit scope")
+    year_opts = list(range(today.year, today.year - 6, -1))
+    st.selectbox("Quick year", year_opts, key="audit_year_sel", on_change=_set_year, index=1)
+    bc1,bc2,bc3 = st.columns(3)
+    bc1.button("This month", on_click=_this_month, use_container_width=True)
+    bc2.button("Last Q",     on_click=_last_q,     use_container_width=True)
+    bc3.button("Last 6m",    on_click=_last_6,     use_container_width=True)
+    SCOPE_START = st.date_input("From", value=st.session_state["ss_start"],
+                                key="di_start", on_change=_date_chg)
+    SCOPE_END   = st.date_input("To",   value=st.session_state["ss_end"],
+                                key="di_end",   on_change=_date_chg)
+    st.button("▶  GO", on_click=_go, type="primary", use_container_width=True)
+    if st.session_state.get("locked"):
+        st.success(f"Locked: {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  HEADER + UPLOAD ZONE
+#  PAGE HEADER
 # ─────────────────────────────────────────────────────────────────────────────
+inject_css()
 render_header()
+led_status_bar()
 
-st.markdown("### 📂 Upload audit documents")
-st.caption(
-    "Upload all documents in one place. The tool auto-detects each file by filename. "
-    "Name files clearly: `HR_Master_2025.xlsx` · `System_Access_2025.xlsx` · `SOA_ISO27001.xlsx` · "
-    "`SoD_Matrix.xlsx` · `Access_Control_Policy.pdf` · `JML_Procedure.pdf`"
-)
+st.markdown("## 🔍 IAM Audit Tool")
+st.caption("Upload HR Master + System Access files to run a full Identity & Access audit.")
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  FILE UPLOAD
+# ─────────────────────────────────────────────────────────────────────────────
 uploaded_files = st.file_uploader(
-    "Drop all your audit documents here",
-    type=["xlsx","xls","csv","pdf","txt","docx"],
+    "Upload files — HR Master, System Access, SOA, RBAC Matrix, Privileged Registry, policy documents",
+    type=["xlsx","xls","csv","pdf","docx","txt"],
     accept_multiple_files=True,
-    label_visibility="collapsed",
-    key="multi_upload",
+    key="main_uploader",
 )
 
-# ── Auto-classify ─────────────────────────────────────────────────────────────
-hr_file   = None
-sys_file  = None
+hr_file  = None
+sys_file = None
 doc_files = []
+rbac_file = None
+registry_file = None
 
 if uploaded_files:
-    classified = {f.name: detect_doc_type(f) for f in uploaded_files}
+    auto_hr  = next((f for f in uploaded_files if detect_doc_type(f) == "hr_master"),     None)
+    auto_sys = next((f for f in uploaded_files if detect_doc_type(f) == "system_access"),  None)
 
-    st.markdown("**Files detected:**")
-    det_cols = st.columns(min(len(uploaded_files), 4))
-    for i, f in enumerate(uploaded_files):
-        dtype = classified[f.name]
-        icon = {"hr_master":"👥","system_access":"💻","soa":"📋",
-                "access_policy":"🔒","jml_procedure":"🔄","risk_register":"⚠️",
-                "rbac_matrix":"🔑","privileged_registry":"🛡️",
-                "standard":"📄","other":"📎"}.get(dtype,"📎")
-        label = {"hr_master":"HR Master","system_access":"System Access / UAL",
-                 "soa":"SOA / Standard","access_policy":"Access Policy",
-                 "jml_procedure":"JML Procedure","risk_register":"Risk Register",
-                 "rbac_matrix":"RBAC Matrix","privileged_registry":"Privileged User Registry",
-                 "standard":"Standard / Policy","other":"Other document"}.get(dtype,"Document")
-        det_cols[i % 4].success(f"{icon} {f.name} — {label}")
+    remaining = [f for f in uploaded_files if f not in [auto_hr, auto_sys]]
 
-    for f in uploaded_files:
-        dtype = classified[f.name]
-        if dtype == "hr_master" and hr_file is None:
-            hr_file = f
-        elif dtype == "system_access" and sys_file is None:
-            sys_file = f
+    uc1, uc2 = st.columns(2)
+    with uc1:
+        hr_opts  = ["— auto-detected —"] + [f.name for f in uploaded_files]
+        hr_sel   = st.selectbox("HR Master file",     hr_opts,
+                                index=hr_opts.index(auto_hr.name)  if auto_hr  else 0,
+                                key="hr_sel")
+        hr_file  = next((f for f in uploaded_files if f.name == hr_sel),  auto_hr)
+    with uc2:
+        sys_opts = ["— auto-detected —"] + [f.name for f in uploaded_files]
+        sys_sel  = st.selectbox("System Access file", sys_opts,
+                                index=sys_opts.index(auto_sys.name) if auto_sys else 0,
+                                key="sys_sel")
+        sys_file = next((f for f in uploaded_files if f.name == sys_sel), auto_sys)
+
+    # OCR fallback for images / scanned PDFs
+    ocr_files = [f for f in uploaded_files if f.name.lower().endswith((".png",".jpg",".jpeg"))]
+    if ocr_files and not sys_file:
+        st.info(f"🖼️ Image file detected: {ocr_files[0].name}. Attempting OCR extraction…")
+        ocr_df, ocr_err = ocr_via_ai(ocr_files[0])
+        if ocr_df is not None:
+            st.success(f"OCR extracted {len(ocr_df)} rows from {ocr_files[0].name}")
+            sys_file_ocr = io.BytesIO()
+            ocr_df.to_csv(sys_file_ocr, index=False)
+            sys_file_ocr.name = "ocr_system_access.csv"
+            sys_file_ocr.seek(0)
+            sys_file = sys_file_ocr
         else:
-            doc_files.append((f, dtype))
+            st.warning(f"OCR failed: {ocr_err}")
 
-    if not hr_file or not sys_file:
-        st.warning("⚠️ Could not auto-detect all required files. Please assign them manually:")
-        file_names = [f.name for f in uploaded_files]
-        ma1, ma2 = st.columns(2)
-        with ma1:
-            hr_sel = st.selectbox("Which file is the HR Master?",
-                                  options=["— not uploaded —"] + file_names, key="hr_manual_sel")
-            if hr_sel != "— not uploaded —":
-                hr_file = next(f for f in uploaded_files if f.name == hr_sel)
-        with ma2:
-            sys_sel = st.selectbox("Which file is the System Access list?",
-                                   options=["— not uploaded —"] + file_names, key="sys_manual_sel")
-            if sys_sel != "— not uploaded —":
-                sys_file = next(f for f in uploaded_files if f.name == sys_sel)
+    doc_files     = [(f, detect_doc_type(f)) for f in uploaded_files
+                     if f not in [hr_file, sys_file] and detect_doc_type(f) not in ("hr_master","system_access")]
+    rbac_file     = next((f for f,t in doc_files if t == "rbac_matrix"),        None)
+    registry_file = next((f for f,t in doc_files if t == "privileged_registry"),None)
 
-# ── Legacy / OCR upload ───────────────────────────────────────────────────────
-with st.expander("📸 Legacy system upload — screenshot or PDF (AI-powered extraction)", expanded=False):
-    st.caption(
-        "For old systems that only produce screenshots or PDFs. "
-        "Upload an image or PDF — AI extracts the account data automatically."
-    )
-    ocr_file = st.file_uploader(
-        "Upload screenshot or PDF of legacy system report",
-        type=["png","jpg","jpeg","pdf"], key="ocr_upload", label_visibility="collapsed",
-    )
-    if ocr_file:
-        if st.button("🔍 Extract data from image", type="primary"):
-            with st.spinner("Extracting account data from image..."):
-                ocr_df, ocr_err = ocr_via_ai(ocr_file)
-            if ocr_err:
-                st.error(f"Extraction failed: {ocr_err}")
-            elif ocr_df is not None and not ocr_df.empty:
-                st.success(f"Extracted {len(ocr_df)} account rows from the image.")
-                st.dataframe(ocr_df, use_container_width=True, hide_index=True)
-                buf = io.BytesIO()
-                ocr_df.to_excel(buf, index=False)
-                buf.seek(0)
-                st.download_button(
-                    "📥 Download extracted data as System_Access.xlsx",
-                    data=buf.getvalue(), file_name="System_Access_OCR_Extracted.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            else:
-                st.warning("No account rows could be extracted. Try a clearer image.")
+    if doc_files:
+        st.caption(f"📄 Additional documents detected: {', '.join(f.name for f,_ in doc_files)}")
 
-st.divider()
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  DOCUMENT INTELLIGENCE PANEL
-# ─────────────────────────────────────────────────────────────────────────────
-doc_context      = {}
-soa_sod_extra    = {}
-rbac_matrix_data = {}
-registry_df_data = None
+soa_sod_extra = {}
+rbac_matrix   = None
+registry_df   = None
 
 if doc_files:
-    with st.expander(f"📄 Document intelligence — {len(doc_files)} policy/standard document(s) parsed", expanded=False):
-        for f, dtype in doc_files:
+    for f, dtype in doc_files:
+        f.seek(0)
+        if dtype == "rbac_matrix" and rbac_file:
+            rbac_file.seek(0)
+            rbac_matrix = load_rbac_matrix(rbac_file)
+            if rbac_matrix:
+                st.caption(f"✅ RBAC Matrix loaded — {len(rbac_matrix)} role definitions.")
+        elif dtype == "privileged_registry" and registry_file:
+            registry_file.seek(0)
+            registry_df = load_privileged_registry(registry_file)
+            if registry_df is not None:
+                st.caption(f"✅ Privileged Registry loaded — {len(registry_df)} entries.")
+        else:
             text = extract_text(f)
-            doc_context[dtype] = text
-            label = {"soa":"SOA — ISO 27001 Annex A","access_policy":"Access Control Policy",
-                     "jml_procedure":"JML Procedure","risk_register":"Risk Register",
-                     "standard":"Audit Standard / Policy","other":"Supporting document"}.get(dtype, dtype)
-            st.markdown(f"**{f.name}** — detected as: *{label}*")
-            if text and not text.startswith("["):
-                st.caption(f"Extracted {len(text):,} characters.")
-                if dtype == "rbac_matrix":
-                    f.seek(0)
-                    rbac_rules, rbac_err = load_rbac_matrix(f)
-                    if rbac_rules:
-                        rbac_matrix_data.update(rbac_rules)
-                        st.caption(f"RBAC Matrix loaded — {len(rbac_rules)} job role entitlements.")
-                    elif rbac_err:
-                        st.warning(f"Could not read RBAC Matrix: {rbac_err}")
-                elif dtype == "privileged_registry":
-                    f.seek(0)
-                    reg_df, reg_err = load_privileged_registry(f)
-                    if reg_df is not None:
-                        registry_df_data = reg_df
-                        st.caption(f"Privileged User Registry loaded — {len(reg_df)} entries.")
-                    elif reg_err:
-                        st.warning(f"Could not read Privileged User Registry: {reg_err}")
-                elif dtype in ("soa","access_policy","sod_matrix","other"):
-                    if f.name.lower().endswith((".xlsx",".xls")):
-                        f.seek(0)
-                        matrix_rules, matrix_err = load_sod_matrix(f)
-                        if matrix_rules:
-                            st.caption(f"Loaded {len(matrix_rules)} SoD rules from Excel matrix.")
-                            soa_sod_extra.update(matrix_rules)
+            if text:
+                matrix_rules = load_sod_matrix(f) if dtype in ("soa","rbac_matrix") else {}
+                if matrix_rules:
+                    soa_sod_extra.update(matrix_rules)
                     extra = parse_soa_sod_rules(text)
                     if extra:
                         st.caption(f"Extracted {len(extra)} SoD rules from document text.")
@@ -424,68 +345,60 @@ not a sample or extract pre-filtered by the client.
             st.rerun()
         st.stop()
 
-    if not st.session_state.get("locked", False):
-        s1,s2,s3 = st.columns(3)
-        s1.metric("Population confirmed", f"{len(hr_df_f):,} HR | {len(sys_df_f):,} system")
-        s2.metric("Year selector",        str(st.session_state.get("audit_year_sel", _default_year)))
-        s3.metric("Policy docs parsed",   len(doc_files))
-        st.info(
-            f"📅 Set to **{SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}**. "
-            f"Click **▶ GO — Run Audit** in the sidebar to lock and scan."
-        )
-        st.stop()
-
     _cache_key = (
-        len(hr_df_f), len(sys_df_f),
-        str(SCOPE_START), str(SCOPE_END),
-        DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
-        FUZZY_THRESHOLD, MAX_SYSTEMS,
-        tuple(sorted(selected_fw)),
-        len(soa_sod_extra),
-        len(rbac_matrix_data) if rbac_matrix_data else 0,
-        len(registry_df_data) if registry_df_data is not None else 0,
+        getattr(hr_file,  "name","") + str(len(hr_df_f)) +
+        getattr(sys_file, "name","") + str(len(sys_df_f)) +
+        str(SCOPE_START) + str(SCOPE_END) +
+        str(DORMANT_DAYS) + str(PASSWORD_EXPIRY_DAYS) +
+        str(FUZZY_THRESHOLD) + str(MAX_SYSTEMS) + str(selected_fw)
     )
 
-    if (st.session_state.get("_last_cache_key") != _cache_key or
-            "findings_cache" not in st.session_state):
-        with st.spinner("🔍 Running 18 checks across all identities…"):
-            findings_df, excluded_count, _col_warnings = run_audit(
+    if (st.session_state.get("findings_cache") is None or
+            st.session_state.get("_last_cache_key") != _cache_key):
+        with st.spinner("Running audit checks…"):
+            findings_df, excluded_count, missing_warnings = run_audit(
                 hr_df_f, sys_df_f,
                 SCOPE_START, SCOPE_END,
                 DORMANT_DAYS, PASSWORD_EXPIRY_DAYS,
                 FUZZY_THRESHOLD, MAX_SYSTEMS,
                 selected_fw,
-                sod_override=soa_sod_extra if soa_sod_extra else None,
-                rbac_matrix=rbac_matrix_data if rbac_matrix_data else None,
-                registry_df=registry_df_data,
+                sod_override=soa_sod_extra or None,
+                rbac_matrix=rbac_matrix,
+                registry_df=registry_df,
             )
-        # ── IRS computation ────────────────────────────────────────────────
-        findings_df   = compute_irs(findings_df, SCOPE_END)
-        risk_register = build_risk_register(findings_df)
-        irs_stats     = irs_summary_stats(risk_register)
+            if rbac_matrix and not findings_df.empty:
+                rbac_findings = run_rbac_checks(sys_df_f, rbac_matrix, selected_fw)
+                if not rbac_findings.empty:
+                    findings_df = pd.concat([findings_df, rbac_findings], ignore_index=True)
+            if registry_df is not None and not findings_df.empty:
+                reg_findings = run_registry_checks(sys_df_f, registry_df, selected_fw)
+                if not reg_findings.empty:
+                    findings_df = pd.concat([findings_df, reg_findings], ignore_index=True)
 
-        st.session_state["findings_cache"]      = findings_df
-        st.session_state["excluded_cache"]      = excluded_count
-        st.session_state["risk_register_cache"] = risk_register
-        st.session_state["irs_stats_cache"]     = irs_stats
-        st.session_state["_last_cache_key"]     = _cache_key
+        st.session_state["findings_cache"]  = findings_df
+        st.session_state["excluded_cache"]  = excluded_count
+        st.session_state["_last_cache_key"] = _cache_key
     else:
-        findings_df   = st.session_state["findings_cache"]
-        excluded_count= st.session_state["excluded_cache"]
-        risk_register = st.session_state.get("risk_register_cache", pd.DataFrame())
-        irs_stats     = st.session_state.get("irs_stats_cache", {})
+        findings_df    = st.session_state["findings_cache"]
+        excluded_count = st.session_state["excluded_cache"]
+        missing_warnings = []
 
-    in_scope_n = len(sys_df_f) - excluded_count
-    total = len(findings_df)
+    for w in missing_warnings:
+        st.warning(w)
 
-    doc_names  = ", ".join(f.name for f,_ in doc_files) if doc_files else "None uploaded"
-    dept_label = f"{len(selected_depts)} dept(s): {', '.join(selected_depts)}" if selected_depts else "All departments"
+    # IRS
+    risk_register = None
+    irs_stats     = {}
+    try:
+        if not findings_df.empty:
+            risk_register = build_risk_register(findings_df, SCOPE_END)
+            irs_stats     = irs_summary_stats(risk_register)
+            findings_df   = compute_irs(findings_df, SCOPE_END)
+    except Exception:
+        pass
 
-    b1,b2,b3,b4 = st.columns(4)
-    b1.success(f"🔒 Scope: {SCOPE_START.strftime('%d %b %Y')} → {SCOPE_END.strftime('%d %b %Y')}")
-    b2.success(f"👥 Scanned: {in_scope_n:,} of {len(sys_df_f):,} accounts")
-    b3.info(f"🏢 Departments: {dept_label}")
-    b4.info(f"📄 Docs: {len(doc_files)} policy/standard file(s)")
+    total      = len(findings_df)
+    in_scope_n = max(len(sys_df_f) - excluded_count, 0)
 
     if excluded_count == len(sys_df_f) and len(sys_df_f) > 0:
         st.error(
@@ -563,9 +476,10 @@ not a sample or extract pre-filtered by the client.
     st.divider()
 
     # ── TABS ─────────────────────────────────────────────────────────────────
-    tab1,tab2,tab3,tab4,tab5,tab6,tab7 = st.tabs([
+    tab1,tab2,tab3,tab4,tab5,tab6,tab7,tab8 = st.tabs([
         "🔎  Findings","🛠️  Remediation","⚖️  Frameworks",
-        "📈  Analysis","🎯  Risk Register","✍️  Opinion","🎲  Audit Sample",
+        "📈  Analysis","🛡️  MFA Heatmap","🎯  Risk Register",
+        "✍️  Opinion","🎲  Audit Sample",
     ])
 
     sdf = findings_df.copy()
@@ -839,155 +753,420 @@ not a sample or extract pre-filtered by the client.
             st.dataframe(btyp, use_container_width=True, hide_index=True, height=360)
 
         with r3b:
-            if "DaysInactive" in findings_df.columns:
-                dom = findings_df[
-                    findings_df["DaysInactive"].notna() &
-                    (findings_df["IssueType"] == "Dormant Account")
-                ].copy()
-                if not dom.empty:
-                    st.markdown("**Dormant account inactivity distribution**")
-                    def bucket(d):
-                        if d <= 180:  return "91–180 days"
-                        if d <= 365:  return "181–365 days"
-                        if d <= 730:  return "1–2 years"
-                        return "2+ years"
-                    dom["Range"] = dom["DaysInactive"].apply(bucket)
-                    buckets = dom["Range"].value_counts().reindex(
-                        ["91–180 days","181–365 days","1–2 years","2+ years"], fill_value=0
-                    ).reset_index()
-                    buckets.columns = ["Inactivity range","Count"]
-                    try:
-                        import plotly.graph_objects as go
-                        fig3 = go.Figure(data=[go.Bar(
-                            x=buckets["Inactivity range"].tolist(),
-                            y=buckets["Count"].tolist(),
-                            marker_color=["#F9CB42","#EF9F27","#E24B4A","#A32D2D"],
-                            text=buckets["Count"].tolist(), textposition="outside",
-                        )])
-                        fig3.update_layout(
-                            height=300, margin=dict(t=30,b=40,l=40,r=20),
-                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                            font=dict(family="Arial",color="#404040"),
-                            yaxis=dict(gridcolor="rgba(0,0,0,0.05)"), showlegend=False,
-                        )
-                        st.plotly_chart(fig3, use_container_width=True)
-                    except ImportError:
-                        st.bar_chart(buckets.set_index("Inactivity range"))
+            st.markdown("**Top 10 highest-risk individuals**")
+            if "identity_risk_score" in findings_df.columns:
+                top_ids = (
+                    findings_df.groupby("Email")
+                    .agg(IRS=("identity_risk_score","max"),
+                         Findings=("IssueType","count"),
+                         Department=("Department","first"),
+                         FullName=("FullName","first"))
+                    .reset_index()
+                    .sort_values("IRS", ascending=False)
+                    .head(10)
+                )
+                st.dataframe(top_ids, use_container_width=True, hide_index=True, height=360)
+            else:
+                top_ids = (
+                    findings_df.groupby("Email")
+                    .agg(Findings=("IssueType","count"),
+                         Department=("Department","first"),
+                         FullName=("FullName","first"))
+                    .reset_index()
+                    .sort_values("Findings", ascending=False)
+                    .head(10)
+                )
+                st.dataframe(top_ids, use_container_width=True, hide_index=True, height=360)
 
-    # ── Tab 5: Identity Risk Register ─────────────────────────────────────────
+    # ── Tab 5: MFA Heatmap ────────────────────────────────────────────────────
     with tab5:
-        st.markdown("### 🎯 Identity Risk Register")
+        st.markdown("### 🛡️ MFA Coverage & Enforcement Gap Analysis")
         st.caption(
-            "One row per identity. Ranked by composite Identity Risk Score (0–100). "
-            "Score combines severity weight (40%), critical flag (25%), dormancy (15%), "
-            "privilege breadth (12%), and contractor risk (8%)."
+            "Identity is the new perimeter. Every account with MFA disabled is an open door. "
+            "This heatmap shows exactly where the perimeter is broken — by department and by system."
         )
 
-        if risk_register is not None and not risk_register.empty:
-            # ── Band filter ───────────────────────────────────────────────────
-            band_opts = ["All"] + [b for b in ["CRITICAL","HIGH","MEDIUM","LOW"]
-                                   if b in risk_register["Risk_Band"].values]
-            rb1, rb2 = st.columns([2,3])
-            with rb1:
-                band_filter = st.selectbox("Filter by risk band", band_opts, key="rr_band_filter")
-            with rb2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                rr_c = risk_register["Risk_Band"].value_counts()
-                parts = []
-                for b, ico in [("CRITICAL","🔴"),("HIGH","🟠"),("MEDIUM","🟡"),("LOW","🟢")]:
-                    if b in rr_c:
-                        parts.append(f"{ico} {b}: **{rr_c[b]}**")
-                st.markdown(" · ".join(parts))
+        # ── Build MFA population from sys_df_f ───────────────────────────────
+        if "MFA" not in sys_df_f.columns:
+            st.warning("⚠️ MFA column not found in System Access file. Upload a file that includes an MFA column (values: Enabled / Disabled).")
+        else:
+            _mfa = sys_df_f.copy()
+            _mfa["_mfa_lower"] = _mfa["MFA"].astype(str).str.strip().str.lower()
+            _mfa["MFA_Status"] = _mfa["_mfa_lower"].apply(
+                lambda v: "Enabled" if v in ("enabled","yes","true","1","enrolled","active")
+                          else ("Disabled" if v in ("disabled","no","false","0","none","not enrolled","not_enrolled","")
+                          else "Unknown")
+            )
 
-            rr_display = risk_register if band_filter == "All" else risk_register[risk_register["Risk_Band"] == band_filter]
+            # Join Department from HR if not present in sys_df_f
+            if "Department" not in _mfa.columns or _mfa["Department"].isna().all():
+                _hr_dept = hr_df_f[["Email","Department"]].copy()
+                _hr_dept["Email"] = _hr_dept["Email"].str.strip().str.lower()
+                _mfa["_em_lower"] = _mfa["Email"].str.strip().str.lower()
+                _mfa = _mfa.merge(_hr_dept.rename(columns={"Email":"_em_lower","Department":"_dept_hr"}),
+                                  on="_em_lower", how="left")
+                _mfa["Department"] = _mfa.get("_dept_hr", "Unknown").fillna("Unknown")
+            else:
+                _mfa["Department"] = _mfa["Department"].fillna("Unknown")
 
-            # ── Styled dataframe ──────────────────────────────────────────────
-            def _colour_band(val):
-                colours = {"CRITICAL":"#FFDEDE","HIGH":"#FFF0CC","MEDIUM":"#FFFBCC","LOW":"#DFFFEA"}
-                return f"background-color: {colours.get(val,'')}"
+            _system_col = "SystemName" if "SystemName" in _mfa.columns else None
 
-            def _colour_score(val):
-                try:
-                    v = int(val)
-                    if v >= 75: return "background-color:#FFDEDE;font-weight:bold"
-                    if v >= 50: return "background-color:#FFF0CC"
-                    if v >= 25: return "background-color:#FFFBCC"
-                    return "background-color:#DFFFEA"
-                except Exception:
-                    return ""
+            total_accounts  = len(_mfa)
+            mfa_enabled_n   = len(_mfa[_mfa["MFA_Status"] == "Enabled"])
+            mfa_disabled_n  = len(_mfa[_mfa["MFA_Status"] == "Disabled"])
+            mfa_unknown_n   = len(_mfa[_mfa["MFA_Status"] == "Unknown"])
+            coverage_pct    = round(mfa_enabled_n / total_accounts * 100, 1) if total_accounts else 0
+            gap_pct         = round(mfa_disabled_n / total_accounts * 100, 1) if total_accounts else 0
 
-            display_cols = [c for c in [
-                "Rank","Identity","Risk_Score","Risk_Band","Finding_Count",
-                "Critical_Findings","High_Findings","Medium_Findings","Checks_Triggered",
-            ] if c in rr_display.columns]
+            # ── Top-level MFA metrics ─────────────────────────────────────────
+            hm1, hm2, hm3, hm4, hm5 = st.columns(5)
+            hm1.metric("Total accounts",     f"{total_accounts:,}")
+            hm2.metric("✅ MFA Enabled",      f"{mfa_enabled_n:,}",  delta=f"{coverage_pct}%")
+            hm3.metric("🚨 MFA Disabled",     f"{mfa_disabled_n:,}", delta=f"-{gap_pct}%", delta_color="inverse")
+            hm4.metric("❓ MFA Unknown",      f"{mfa_unknown_n:,}")
+            hm5.metric("Coverage",           f"{coverage_pct}%",
+                       delta="Target: 100%", delta_color="off")
 
-            try:
-                styled = (
-                    rr_display[display_cols]
-                    .style
-                    .applymap(_colour_band, subset=["Risk_Band"])
-                    .applymap(_colour_score, subset=["Risk_Score"])
-                )
-                st.dataframe(
-                    styled,
-                    use_container_width=True,
-                    hide_index=True,
-                    height=min(60 + len(rr_display) * 35, 520),
-                    column_config={
-                        "Rank":             st.column_config.NumberColumn("Rank",       width="small"),
-                        "Identity":         st.column_config.TextColumn("Identity",     width="medium"),
-                        "Risk_Score":       st.column_config.NumberColumn("IRS",        width="small",
-                                                help="Identity Risk Score 0–100"),
-                        "Risk_Band":        st.column_config.TextColumn("Band",         width="small"),
-                        "Finding_Count":    st.column_config.NumberColumn("Findings",   width="small"),
-                        "Critical_Findings":st.column_config.NumberColumn("🔴 Crit",   width="small"),
-                        "High_Findings":    st.column_config.NumberColumn("🟠 High",   width="small"),
-                        "Medium_Findings":  st.column_config.NumberColumn("🟡 Med",    width="small"),
-                        "Checks_Triggered": st.column_config.TextColumn("Checks",       width="large"),
-                    }
-                )
-            except Exception:
-                # matplotlib not available or styling fails — render unstyled
-                st.dataframe(
-                    rr_display[display_cols],
-                    use_container_width=True,
-                    hide_index=True,
-                    height=min(60 + len(rr_display) * 35, 520),
-                )
+            st.divider()
 
-            # ── IRS score distribution chart ──────────────────────────────────
-            if "Risk_Score" in risk_register.columns:
-                st.divider()
-                st.markdown("**IRS score distribution across population**")
-                bins = [0,25,50,75,100]
-                labels = ["Low (0–24)","Medium (25–49)","High (50–74)","Critical (75–100)"]
-                score_series = pd.to_numeric(risk_register["Risk_Score"], errors="coerce").dropna()
-                counts = pd.cut(score_series, bins=bins, labels=labels, include_lowest=True).value_counts().reindex(labels, fill_value=0)
-                hist_df = pd.DataFrame({"Band": counts.index, "Identities": counts.values})
-                try:
-                    import plotly.graph_objects as go
-                    fig_irs = go.Figure(data=[go.Bar(
-                        x=hist_df["Band"].tolist(),
-                        y=hist_df["Identities"].tolist(),
-                        marker_color=["#DFFFEA","#FFFBCC","#FFF0CC","#FFDEDE"],
-                        text=hist_df["Identities"].tolist(),
-                        textposition="outside",
-                    )])
-                    fig_irs.update_layout(
-                        height=280, margin=dict(t=20,b=40,l=40,r=20),
-                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                        font=dict(family="Arial",color="#404040"),
-                        yaxis=dict(gridcolor="rgba(0,0,0,0.05)",title="Identities"),
-                        showlegend=False,
+            # ── Heatmap: Department × System ─────────────────────────────────
+            st.markdown("#### MFA Gap Heatmap — Department × System")
+            st.caption("Each cell shows the number of accounts with MFA **disabled**. Red = most exposed.")
+
+            _disabled = _mfa[_mfa["MFA_Status"] == "Disabled"].copy()
+
+            if _disabled.empty:
+                st.success("✅ No MFA gaps found — full MFA coverage across all departments and systems.")
+            else:
+                if _system_col:
+                    pivot = (
+                        _disabled.groupby(["Department", _system_col])
+                        .size()
+                        .reset_index(name="MFA_Disabled_Count")
+                        .pivot(index="Department", columns=_system_col, values="MFA_Disabled_Count")
+                        .fillna(0)
+                        .astype(int)
                     )
-                    st.plotly_chart(fig_irs, use_container_width=True)
-                except ImportError:
-                    st.bar_chart(hist_df.set_index("Band"))
+                    pivot["TOTAL"] = pivot.sum(axis=1)
+                    pivot = pivot.sort_values("TOTAL", ascending=False)
+                    systems = [c for c in pivot.columns if c != "TOTAL"]
 
-            # ── Component score breakdown ─────────────────────────────────────
-            comp_cols = [c for c in [
-                "IRS_Severity","IRS_Critical_Flag","IRS_Dormancy","IRS_Privilege","IRS_Contractor"
-            ] if c in risk_register.columns]
+                    try:
+                        import plotly.graph_objects as go
+                        import numpy as np
+
+                        z_vals      = pivot[systems].values
+                        dept_labels = pivot.index.tolist()
+                        sys_labels  = systems
+
+                        # Custom red-scale: 0 = white, max = deep red
+                        colorscale = [
+                            [0.0,  "#ffffff"],
+                            [0.01, "#fff0f0"],
+                            [0.3,  "#ffaaaa"],
+                            [0.6,  "#ef4444"],
+                            [1.0,  "#7f1d1d"],
+                        ]
+
+                        fig_hm = go.Figure(data=go.Heatmap(
+                            z=z_vals,
+                            x=sys_labels,
+                            y=dept_labels,
+                            colorscale=colorscale,
+                            text=z_vals,
+                            texttemplate="%{text}",
+                            textfont={"size": 13, "color": "black"},
+                            hovertemplate="Dept: %{y}<br>System: %{x}<br>MFA Disabled: %{z}<extra></extra>",
+                            showscale=True,
+                            colorbar=dict(title="Accounts<br>w/ MFA off", thickness=14, len=0.8),
+                        ))
+                        fig_hm.update_layout(
+                            height=max(300, len(dept_labels) * 44 + 80),
+                            margin=dict(t=30, b=60, l=160, r=40),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(family="Arial", color="#1F3864", size=12),
+                            xaxis=dict(tickangle=-30, side="bottom"),
+                            yaxis=dict(autorange="reversed"),
+                        )
+                        st.plotly_chart(fig_hm, use_container_width=True)
+
+                    except ImportError:
+                        st.dataframe(pivot, use_container_width=True)
+
+                    # ── Department totals bar chart ───────────────────────────
+                    st.markdown("#### MFA disabled count by department")
+                    dept_totals = pivot["TOTAL"].reset_index()
+                    dept_totals.columns = ["Department","MFA Disabled"]
+                    dept_totals = dept_totals.sort_values("MFA Disabled", ascending=False)
+
+                    try:
+                        fig_bar = go.Figure(data=[go.Bar(
+                            x=dept_totals["Department"].tolist(),
+                            y=dept_totals["MFA Disabled"].tolist(),
+                            marker_color=[
+                                "#7f1d1d" if v >= 10 else
+                                "#ef4444" if v >= 5 else
+                                "#fca5a5" if v >= 1 else "#d1fae5"
+                                for v in dept_totals["MFA Disabled"].tolist()
+                            ],
+                            text=dept_totals["MFA Disabled"].tolist(),
+                            textposition="outside",
+                        )])
+                        fig_bar.update_layout(
+                            height=320,
+                            margin=dict(t=20, b=80, l=40, r=20),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(family="Arial", color="#1F3864"),
+                            xaxis=dict(tickangle=-30),
+                            yaxis=dict(title="Accounts with MFA disabled"),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                    except ImportError:
+                        st.bar_chart(dept_totals.set_index("Department"))
+
+                else:
+                    # No SystemName column — show department-only breakdown
+                    dept_gap = (
+                        _disabled.groupby("Department")
+                        .size()
+                        .reset_index(name="MFA Disabled")
+                        .sort_values("MFA Disabled", ascending=False)
+                    )
+                    st.dataframe(dept_gap, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # ── Coverage % by department table ────────────────────────────────
+            st.markdown("#### MFA coverage by department")
+            dept_total_counts   = _mfa.groupby("Department").size().rename("Total")
+            dept_enabled_counts = _mfa[_mfa["MFA_Status"]=="Enabled"].groupby("Department").size().rename("Enabled")
+            dept_disabled_counts= _mfa[_mfa["MFA_Status"]=="Disabled"].groupby("Department").size().rename("Disabled")
+            dept_coverage = pd.concat([dept_total_counts, dept_enabled_counts, dept_disabled_counts], axis=1).fillna(0).astype(int)
+            dept_coverage["Coverage %"] = (dept_coverage["Enabled"] / dept_coverage["Total"] * 100).round(1)
+            dept_coverage["Gap %"]      = (dept_coverage["Disabled"] / dept_coverage["Total"] * 100).round(1)
+            dept_coverage["Status"] = dept_coverage["Coverage %"].apply(
+                lambda p: "🔴 Critical" if p < 50 else
+                          "🟠 At Risk"  if p < 80 else
+                          "🟡 Partial"  if p < 100 else
+                          "✅ Full"
+            )
+            dept_coverage = dept_coverage.reset_index().sort_values("Coverage %")
+            st.dataframe(
+                dept_coverage,
+                use_container_width=True,
+                hide_index=True,
+                height=min(60 + len(dept_coverage) * 35, 460),
+                column_config={
+                    "Department":  st.column_config.TextColumn("Department",  width="medium"),
+                    "Total":       st.column_config.NumberColumn("Total",     width="small"),
+                    "Enabled":     st.column_config.NumberColumn("✅ Enabled", width="small"),
+                    "Disabled":    st.column_config.NumberColumn("🚨 Disabled",width="small"),
+                    "Coverage %":  st.column_config.ProgressColumn("Coverage %", min_value=0, max_value=100, format="%.1f%%"),
+                    "Gap %":       st.column_config.NumberColumn("Gap %",     width="small"),
+                    "Status":      st.column_config.TextColumn("Status",      width="small"),
+                }
+            )
+
+            st.divider()
+
+            # ── Kill List: Enrol These Users Now ─────────────────────────────
+            st.markdown("#### 🎯 Enrolment Kill List — users to enrol in MFA immediately")
+            st.caption(
+                "Prioritised by access level: Admin and privileged accounts first, then by department risk. "
+                "Hand this list to your IT Security team with a 48-hour SLA."
+            )
+
+            _kill_list = _mfa[_mfa["MFA_Status"] == "Disabled"].copy()
+
+            # Merge HR data for enrichment
+            _hr_enrich = hr_df_f[["Email","FullName","Department","EmploymentStatus","ContractType"]].copy()
+            _hr_enrich["Email"] = _hr_enrich["Email"].str.strip().str.lower()
+            _kill_list["_em_kl"] = _kill_list["Email"].str.strip().str.lower()
+            _kill_list = _kill_list.merge(
+                _hr_enrich.rename(columns={
+                    "Email":"_em_kl","FullName":"_FullName_hr",
+                    "Department":"_Dept_hr","EmploymentStatus":"_EmpStatus",
+                    "ContractType":"_ContractType"
+                }),
+                on="_em_kl", how="left"
+            )
+
+            # Priority score: Admin/DBAdmin = 3, Payroll/Finance = 2, others = 1
+            def _access_priority(access_str):
+                a = str(access_str).lower()
+                if any(x in a for x in ("admin","root","superadmin","sysadmin","dbadmin")): return 3
+                if any(x in a for x in ("payroll","finance","hr")): return 2
+                return 1
+
+            _kill_list["_priority"] = _kill_list["AccessLevel"].apply(_access_priority) if "AccessLevel" in _kill_list.columns else 1
+            _kill_list = _kill_list.sort_values("_priority", ascending=False)
+
+            # Build display columns
+            kl_display_cols = []
+            for col in ["Email","FullName","_FullName_hr","Department","_Dept_hr","AccessLevel",
+                        "_EmpStatus","_ContractType","SystemName","LastLoginDate"]:
+                if col in _kill_list.columns:
+                    kl_display_cols.append(col)
+
+            _kill_list["Priority"] = _kill_list["_priority"].map({3:"🔴 Urgent",2:"🟠 High",1:"🟡 Standard"})
+            _kill_list["Action"]   = "Enrol MFA within 48h — block login until enrolled"
+
+            kl_final_cols = ["Priority","Email"]
+            for c in ["FullName","_FullName_hr"]:
+                if c in _kill_list.columns and _kill_list[c].notna().any():
+                    kl_final_cols.append(c); break
+            for c in ["Department","_Dept_hr"]:
+                if c in _kill_list.columns and _kill_list[c].notna().any():
+                    kl_final_cols.append(c); break
+            for c in ["AccessLevel","SystemName","LastLoginDate","_EmpStatus","Action"]:
+                if c in _kill_list.columns:
+                    kl_final_cols.append(c)
+
+            kl_final_cols = list(dict.fromkeys(kl_final_cols))  # dedup preserving order
+            kl_show = _kill_list[kl_final_cols].rename(columns={
+                "_FullName_hr": "FullName",
+                "_Dept_hr":     "Department",
+                "_EmpStatus":   "Status",
+            }).reset_index(drop=True)
+
+            kl1, kl2, kl3 = st.columns(3)
+            kl1.metric("Users to enrol",   len(kl_show))
+            kl2.metric("🔴 Urgent (Admin)", int((_kill_list["_priority"] == 3).sum()))
+            kl3.metric("🟠 High (Finance/Payroll/HR)", int((_kill_list["_priority"] == 2).sum()))
+
+            st.dataframe(
+                kl_show, use_container_width=True, hide_index=True,
+                height=min(60 + len(kl_show) * 35, 500),
+                column_config={
+                    "Priority":      st.column_config.TextColumn("Priority",     width="small"),
+                    "Email":         st.column_config.TextColumn("Email",        width="medium"),
+                    "FullName":      st.column_config.TextColumn("Name",         width="small"),
+                    "Department":    st.column_config.TextColumn("Department",   width="small"),
+                    "AccessLevel":   st.column_config.TextColumn("Access Level", width="small"),
+                    "SystemName":    st.column_config.TextColumn("System",       width="small"),
+                    "LastLoginDate": st.column_config.TextColumn("Last Login",   width="small"),
+                    "Status":        st.column_config.TextColumn("HR Status",    width="small"),
+                    "Action":        st.column_config.TextColumn("Action",       width="large"),
+                }
+            )
+
+            # ── One-click export ──────────────────────────────────────────────
+            if not kl_show.empty:
+                kl_buf = io.BytesIO()
+                with pd.ExcelWriter(kl_buf, engine="xlsxwriter") as kl_writer:
+                    kl_wb  = kl_writer.book
+                    kl_hdr = kl_wb.add_format({
+                        "bold": True, "bg_color": "#1F3864", "font_color": "white",
+                        "border": 1, "font_name": "Arial", "font_size": 10,
+                    })
+                    kl_red = kl_wb.add_format({"bg_color": "#FFDEDE", "font_name": "Arial", "font_size": 9})
+                    kl_org = kl_wb.add_format({"bg_color": "#FFF0CC", "font_name": "Arial", "font_size": 9})
+                    kl_std = kl_wb.add_format({"font_name": "Arial", "font_size": 9})
+
+                    kl_show.to_excel(kl_writer, index=False, sheet_name="MFA_Enrolment_KillList")
+                    ws_kl = kl_writer.sheets["MFA_Enrolment_KillList"]
+
+                    for ci, col in enumerate(kl_show.columns):
+                        ws_kl.write(0, ci, col, kl_hdr)
+                        ws_kl.set_column(ci, ci, max(18, len(str(col)) + 4))
+
+                    for ri, (_, row) in enumerate(_kill_list.iterrows(), start=1):
+                        fmt = kl_red if row.get("_priority") == 3 else (kl_org if row.get("_priority") == 2 else kl_std)
+                        for ci, col in enumerate(kl_show.columns):
+                            ws_kl.write(ri, ci, str(kl_show.iloc[ri-1][col] if ri-1 < len(kl_show) else ""), fmt)
+
+                    # Summary sheet
+                    ws_sum = kl_wb.add_worksheet("MFA_Coverage_Summary")
+                    ws_sum.write(0, 0, "MFA Gap Analysis — generated by IAM Audit Tool", kl_hdr)
+                    ws_sum.write(1, 0, f"Generated: {datetime.today().strftime('%d %B %Y')}")
+                    ws_sum.write(2, 0, f"Total accounts scanned: {total_accounts}")
+                    ws_sum.write(3, 0, f"MFA Enabled: {mfa_enabled_n} ({coverage_pct}%)")
+                    ws_sum.write(4, 0, f"MFA Disabled: {mfa_disabled_n} ({gap_pct}%)")
+                    ws_sum.write(5, 0, f"Accounts requiring immediate enrolment: {len(kl_show)}")
+                    ws_sum.set_column(0, 0, 50)
+
+                    dept_coverage.to_excel(kl_writer, index=False, sheet_name="Dept_MFA_Coverage")
+
+                kl_buf.seek(0)
+                ref_slug_mfa = (meta.get("ref") or "Audit").replace(" ","_").replace("/","-")
+                st.download_button(
+                    label="📥  Download MFA Enrolment Kill List (.xlsx)",
+                    data=kl_buf.getvalue(),
+                    file_name=f"MFA_Gap_{ref_slug_mfa}_{datetime.today().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    use_container_width=True,
+                )
+                st.caption(
+                    "Hand this to IT Security with instruction: "
+                    "**Enforce MFA enrolment within 48 hours — block login for 🔴 Urgent accounts until enrolled.**"
+                )
+
+    # ── Tab 6: Risk Register ──────────────────────────────────────────────────
+    with tab6:
+        st.markdown("#### 🎯 Identity Risk Register")
+        if risk_register is not None and not risk_register.empty:
+            comp_cols = [c for c in ["IRS_Severity","IRS_Critical_Flag","IRS_Dormancy",
+                                     "IRS_Privilege","IRS_Contractor"] if c in risk_register.columns]
+
+            rr1, rr2, rr3 = st.columns(3)
+            with rr1:
+                st.markdown("**Risk band distribution**")
+                if "risk_band" in risk_register.columns:
+                    band_counts = risk_register["risk_band"].value_counts().reset_index()
+                    band_counts.columns = ["Band","Count"]
+                    st.dataframe(band_counts, use_container_width=True, hide_index=True, height=200)
+            with rr2:
+                st.markdown("**Top 10 highest-risk identities**")
+                if "identity_risk_score" in risk_register.columns:
+                    top10 = risk_register.nlargest(10, "identity_risk_score")[
+                        [c for c in ["Email","FullName","identity_risk_score","risk_band","Department"]
+                         if c in risk_register.columns]
+                    ]
+                    st.dataframe(top10, use_container_width=True, hide_index=True, height=380)
+            with rr3:
+                st.markdown("**IRS score histogram**")
+                if "identity_risk_score" in risk_register.columns:
+                    try:
+                        import plotly.graph_objects as go
+                        hist_vals = risk_register["identity_risk_score"].dropna().tolist()
+                        fig_irs = go.Figure(data=[go.Histogram(
+                            x=hist_vals, nbinsx=20,
+                            marker_color="#4F81BD",
+                            marker_line=dict(color="white", width=0.5),
+                        )])
+                        fig_irs.update_layout(
+                            height=300,
+                            margin=dict(t=20,b=40,l=40,r=20),
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            font=dict(family="Arial",color="#404040"),
+                            xaxis=dict(title="IRS Score",gridcolor="rgba(0,0,0,0.05)"),
+                            yaxis=dict(title="Count",gridcolor="rgba(0,0,0,0.05)"),
+                            bargap=0.05,
+                        )
+                        st.plotly_chart(fig_irs, use_container_width=True)
+                    except ImportError:
+                        st.bar_chart(risk_register["identity_risk_score"].value_counts().sort_index())
+
+            st.divider()
+            st.markdown("**Full risk register**")
+            display_cols = [c for c in
+                ["Email","FullName","Department","identity_risk_score","risk_band"] + comp_cols
+                if c in risk_register.columns]
+            st.dataframe(
+                risk_register[display_cols].sort_values("identity_risk_score", ascending=False)
+                if "identity_risk_score" in risk_register.columns else risk_register[display_cols],
+                use_container_width=True, hide_index=True, height=420,
+                column_config={
+                    "identity_risk_score": st.column_config.NumberColumn("IRS Score", width="small"),
+                    "risk_band":           st.column_config.TextColumn("Band",        width="small"),
+                }
+            )
+
             if comp_cols:
                 st.divider()
                 st.markdown("**Component score breakdown — population averages**")
@@ -1021,8 +1200,8 @@ not a sample or extract pre-filtered by the client.
         else:
             st.info("No risk register data. Run the audit to generate IRS scores.")
 
-    # ── Tab 6: Opinion ────────────────────────────────────────────────────────
-    with tab6:
+    # ── Tab 7: Opinion ────────────────────────────────────────────────────────
+    with tab7:
         st.markdown("#### Audit opinion")
         oc1, oc2 = st.columns([2,1])
         with oc2:
@@ -1058,8 +1237,8 @@ not a sample or extract pre-filtered by the client.
         if doc_files:
             st.caption(f"Documents uploaded: {', '.join(f.name for f,_ in doc_files)}.")
 
-    # ── Tab 7: Audit Sample ───────────────────────────────────────────────────
-    with tab7:
+    # ── Tab 8: Audit Sample ───────────────────────────────────────────────────
+    with tab8:
         st.markdown("#### Audit sample — 25 items for external auditors")
         st.caption(
             "External auditors always request a manual sample even after a full population test. "
@@ -1146,4 +1325,3 @@ else:
         "New here? Visit the **How to Use** page in the sidebar for a full step-by-step walkthrough, "
         "column reference and document naming guide."
     )
-
