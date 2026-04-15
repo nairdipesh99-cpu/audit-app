@@ -267,19 +267,24 @@ if doc_files:
             registry_df = load_privileged_registry(registry_file)
             if registry_df is not None:
                 st.caption(f"✅ Privileged Registry loaded — {len(registry_df)} entries.")
-        else:
-            text = extract_text(f)
-            if text:
-                matrix_rules = load_sod_matrix(f) if dtype in ("soa","rbac_matrix") else {}
-                if matrix_rules:
-                    soa_sod_extra.update(matrix_rules)
-                    extra = parse_soa_sod_rules(text)
-                    if extra:
-                        st.caption(f"Extracted {len(extra)} SoD rules from document text.")
-                        soa_sod_extra.update(extra)
-            else:
-                st.caption(text or "No text extracted.")
-            st.divider()
+       else:
+                    text = extract_text(f)
+                    if text:
+                        if dtype in ("soa", "rbac_matrix"):
+                            f.seek(0)
+                            _raw = load_sod_matrix(f)
+                            matrix_rules = _raw if isinstance(_raw, dict) else (_raw[0] if isinstance(_raw, tuple) and len(_raw) > 0 and isinstance(_raw[0], dict) else {})
+                        else:
+                            matrix_rules = {}
+                        if matrix_rules:
+                            soa_sod_extra.update(matrix_rules)
+                        extra = parse_soa_sod_rules(text)
+                        if extra:
+                            st.caption(f"Extracted {len(extra)} SoD rules from document text.")
+                            soa_sod_extra.update(extra)
+                    else:
+                        st.caption(text or "No text extracted.")
+                    st.divider()
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  MAIN AUDIT FLOW
