@@ -249,11 +249,7 @@ st.markdown("""
   <div style="font-size:30px;font-weight:900;color:#ffffff;
     letter-spacing:-0.03em;font-family:'Inter',sans-serif;margin-bottom:12px;">
     Ready to run your first audit?</div>
-  <div style="font-size:15px;color:#5a7394;font-family:'Inter',sans-serif;
-    margin-bottom:32px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.7;">
-    No API. No IT project. No contract.<br>Five files. Ten minutes. Workpaper ready.</div>
-    No API. No IT project. No contract.<br>Five files. Ten minutes. Workpaper ready.</div>
-</div>
+ 
 """, unsafe_allow_html=True)
 
 # Bottom CTA — st.page_link only
