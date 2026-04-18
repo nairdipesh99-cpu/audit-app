@@ -1,5 +1,5 @@
 """
-pages/connectors.py — Live Connector Hub
+pages/Connectors.py — Live Connector Hub
 """
 
 import streamlit as st
