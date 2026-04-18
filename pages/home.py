@@ -64,15 +64,7 @@ st.markdown("""
   ">80% of your IAM audit.<br>Done in <span style="color:#4d9fff;">10 minutes.</span></div>
 
   <!-- Subtext -->
-  <div style="
-    font-size:16px;color:#5a7394;line-height:1.75;
-    max-width:500px;font-family:'Inter',sans-serif;
-    margin:0 0 36px 0;
-  ">Upload your HR Master and System Access files. 18 automated checks run
-  simultaneously across every account — full population, not a sample.
-  Findings mapped to SOX, ISO 27001, GDPR and PCI-DSS. Workpaper ready.</div>
-
-</div>
+ 
 """, unsafe_allow_html=True)
 
 # Hero CTA — st.page_link is the only reliable navigation on Streamlit Cloud
